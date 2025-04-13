@@ -66,49 +66,86 @@ export function WalletConnection() {
     }
   };
 
-  // EVM wallet connection without QR modal (using injected provider in chrome extensions).
+  // EVM wallet connection logic.
   const handleSelectEvmWallet = async (walletType) => {
     setIsLoading(true);
     closeEvmWalletModal();
     try {
-      // Use injected provider (e.g., MetaMask) if available.
-      if (window.ethereum) {
-        const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
-        if (accounts && accounts.length > 0) {
-          const address = accounts[0];
-          await checkUserAccount(address);
+      if (walletType === "phantom") {
+        // Attempt to use Phantom's injected provider.
+        if (window.ethereum && window.ethereum.isPhantom) {
+          const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+          if (accounts && accounts.length > 0) {
+            const address = accounts[0];
+            await checkUserAccount(address);
+          }
+        } else {
+          // Fallback: Initialize WalletConnect's EthereumProvider for Phantom.
+          const provider = await EthereumProvider.init({
+            projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
+            metadata: {
+              name: "KasCasino Wallet",
+              description: "Wallet for KasCasino",
+              url: "https://kasino-dev-38d41436adab.herokuapp.com/",
+              icons: ["https://your_wallet_icon.png"],
+            },
+            optionalChains: [12211],
+            rpcMap: {
+              12211: "https://www.kasplextest.xyz",
+            },
+          });
+  
+          provider.on("display_uri", (uri) => {
+            console.log("Deep link URI:", uri);
+            // Directly navigate to the URI to trigger connection in mobile browsers.
+            window.location.href = uri;
+          });
+  
+          // Connect to Phantom via WalletConnect.
+          const session = await provider.connect();
+          if (session && session.accounts && session.accounts.length > 0) {
+            const address = session.accounts[0];
+            await checkUserAccount(address);
+          } else {
+            throw new Error("No accounts returned from the Phantom session.");
+          }
         }
       } else {
-        // Fallback: Initialize WalletConnect's EthereumProvider.
-        const provider = await EthereumProvider.init({
-          projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
-          metadata: {
-            name: "KasCasino Wallet",
-            description: "Wallet for KasCasino",
-            url: "https://kasino-dev-38d41436adab.herokuapp.com/",
-            icons: ["https://your_wallet_icon.png"],
-          },
-          optionalChains: [12211],
-          rpcMap: {
-            12211: "https://www.kasplextest.xyz",
-          },
-        });
-
-        // Instead of showing a QR modal, if no injected provider exists,
-        // subscribe to the display_uri event and use deep linking.
-        provider.on("display_uri", (uri) => {
-          console.log("Deep link URI:", uri);
-          // Directly navigate to the URI to trigger connection in mobile browsers.
-          window.location.href = uri;
-        });
-
-        // Call connect() to establish a session.
-        const session = await provider.connect();
-        if (session && session.accounts && session.accounts.length > 0) {
-          const address = session.accounts[0];
-          await checkUserAccount(address);
+        // For other EVM wallets (MetaMask, Trust Wallet, Uniswap).
+        if (window.ethereum) {
+          const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+          if (accounts && accounts.length > 0) {
+            const address = accounts[0];
+            await checkUserAccount(address);
+          }
         } else {
-          throw new Error("No accounts returned from the session.");
+          // Fallback: Initialize WalletConnect's EthereumProvider.
+          const provider = await EthereumProvider.init({
+            projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
+            metadata: {
+              name: "KasCasino Wallet",
+              description: "Wallet for KasCasino",
+              url: "https://kasino-dev-38d41436adab.herokuapp.com/",
+              icons: ["https://your_wallet_icon.png"],
+            },
+            optionalChains: [12211],
+            rpcMap: {
+              12211: "https://www.kasplextest.xyz",
+            },
+          });
+  
+          provider.on("display_uri", (uri) => {
+            console.log("Deep link URI:", uri);
+            window.location.href = uri;
+          });
+  
+          const session = await provider.connect();
+          if (session && session.accounts && session.accounts.length > 0) {
+            const address = session.accounts[0];
+            await checkUserAccount(address);
+          } else {
+            throw new Error("No accounts returned from the session.");
+          }
         }
       }
     } catch (error) {
@@ -225,6 +262,14 @@ export function WalletConnection() {
         <div className="absolute top-full right-0 mt-2 w-64 z-50 bg-[#2F2F2F] text-white rounded-md shadow-lg p-4">
           <h2 className="text-lg font-semibold mb-3">Select EVM Wallet</h2>
           <div className="flex flex-col space-y-3">
+            {/* Phantom Wallet Option */}
+            <button
+              onClick={() => handleSelectEvmWallet("phantom")}
+              className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
+            >
+              <img src="/phantom-logo.webp" alt="Phantom" className="w-8 h-8 mr-3" />
+              <span>Phantom</span>
+            </button>
             <button
               onClick={() => handleSelectEvmWallet("metamask")}
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
