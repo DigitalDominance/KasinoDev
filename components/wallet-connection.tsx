@@ -16,7 +16,7 @@ export function WalletConnection() {
   const [isLoading, setIsLoading] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [showEvmModal, setShowEvmModal] = useState(false);
-  // New state to track which EVM wallet was selected
+  // Track the selected EVM wallet type
   const [selectedEvmWalletType, setSelectedEvmWalletType] = useState(null);
   const dropdownRef = useRef(null);
 
@@ -68,72 +68,46 @@ export function WalletConnection() {
     }
   };
 
-  // EVM wallet connection logic that now respects the selected wallet type.
+  // EVM wallet connection logic using the proper injected provider from WalletKit.
   const handleSelectEvmWallet = async (walletType) => {
     setIsLoading(true);
     closeEvmWalletModal();
 
-    // If a wallet was previously selected and it's different from the new selection,
-    // force a disconnect to clear the provider state.
+    // If switching wallet types, disconnect the current provider.
     if (selectedEvmWalletType && selectedEvmWalletType !== walletType) {
       await disconnectWallet();
       setSelectedEvmWalletType(null);
     }
-    // Record the current selection.
     setSelectedEvmWalletType(walletType);
 
     try {
-      // Check if the injected provider is available.
-      if (window.ethereum) {
-        // Perform wallet-specific checks.
-        if (walletType === "metamask" && !window.ethereum.isMetaMask) {
-          showNotification("MetaMask provider not found.", "error");
-          setIsLoading(false);
-          return;
-        }
-        if (walletType === "phantom" && !window.ethereum.isPhantom) {
-          showNotification("Phantom provider not found.", "error");
-          setIsLoading(false);
-          return;
-        }
-        const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
-        if (accounts && accounts.length > 0) {
-          const address = accounts[0];
-          await checkUserAccount(address);
-        }
-      } else {
-        // Fallback: Initialize WalletConnect's EthereumProvider.
-        const provider = await EthereumProvider.init({
-          projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
-          metadata: {
-            name: "KasCasino Wallet",
-            description: "Wallet for KasCasino",
-            url: "https://kasino-dev-38d41436adab.herokuapp.com/",
-            icons: ["https://your_wallet_icon.png"],
-          },
-          optionalChains: [12211],
-          rpcMap: {
-            12211: "https://www.kasplextest.xyz",
-          },
-        });
-
-        // Subscribe to the display_uri event and use deep linking.
-        provider.on("display_uri", (uri) => {
-          console.log("Deep link URI:", uri);
-          window.location.href = uri;
-        });
-
-        // Call connect() to establish a session.
-        const session = await provider.connect();
-        if (session && session.accounts && session.accounts.length > 0) {
-          const address = session.accounts[0];
-          await checkUserAccount(address);
-        } else {
-          throw new Error("No accounts returned from the session.");
+      let provider = window.ethereum;
+      // If there are multiple providers available, choose the one matching walletType.
+      if (provider && provider.providers && Array.isArray(provider.providers)) {
+        if (walletType === "metamask") {
+          provider = provider.providers.find((p) => p.isMetaMask);
+        } else if (walletType === "phantom") {
+          provider = provider.providers.find((p) => p.isPhantom);
+        } else if (walletType === "trust") {
+          provider = provider.providers.find((p) => p.isTrust);
+        } else if (walletType === "uniswap") {
+          provider = provider.providers.find((p) => p.isUniswap);
         }
       }
+
+      if (!provider) {
+        showNotification(`${walletType} provider not found.`, "error");
+        setIsLoading(false);
+        return;
+      }
+
+      const accounts = await provider.request({ method: "eth_requestAccounts" });
+      if (accounts && accounts.length > 0) {
+        const address = accounts[0];
+        await checkUserAccount(address);
+      }
     } catch (error) {
-      console.error("Error using WalletConnect for EVM wallet connection:", error);
+      console.error("Error using injected provider for EVM wallet connection:", error);
       showNotification("Failed to connect EVM wallet. Please try again.", "error");
     } finally {
       setIsLoading(false);
@@ -187,7 +161,7 @@ export function WalletConnection() {
       setIsLoading(true);
       try {
         await disconnectWallet();
-        setSelectedEvmWalletType(null); // Clear the selected wallet type on disconnect.
+        setSelectedEvmWalletType(null);
       } catch (error) {
         showNotification("Failed to disconnect wallet. Please try again.", "error");
       } finally {
