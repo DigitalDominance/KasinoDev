@@ -16,6 +16,8 @@ export function WalletConnection() {
   const [isLoading, setIsLoading] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [showEvmModal, setShowEvmModal] = useState(false);
+  // New state to track which EVM wallet was selected
+  const [selectedEvmWalletType, setSelectedEvmWalletType] = useState(null);
   const dropdownRef = useRef(null);
 
   // Close the main dropdown when clicking outside.
@@ -66,13 +68,34 @@ export function WalletConnection() {
     }
   };
 
-  // EVM wallet connection without QR modal (using injected provider in chrome extensions).
+  // EVM wallet connection logic that now respects the selected wallet type.
   const handleSelectEvmWallet = async (walletType) => {
     setIsLoading(true);
     closeEvmWalletModal();
+
+    // If a wallet was previously selected and it's different from the new selection,
+    // force a disconnect to clear the provider state.
+    if (selectedEvmWalletType && selectedEvmWalletType !== walletType) {
+      await disconnectWallet();
+      setSelectedEvmWalletType(null);
+    }
+    // Record the current selection.
+    setSelectedEvmWalletType(walletType);
+
     try {
-      // Use injected provider (e.g., MetaMask, Phantom) if available.
+      // Check if the injected provider is available.
       if (window.ethereum) {
+        // Perform wallet-specific checks.
+        if (walletType === "metamask" && !window.ethereum.isMetaMask) {
+          showNotification("MetaMask provider not found.", "error");
+          setIsLoading(false);
+          return;
+        }
+        if (walletType === "phantom" && !window.ethereum.isPhantom) {
+          showNotification("Phantom provider not found.", "error");
+          setIsLoading(false);
+          return;
+        }
         const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
         if (accounts && accounts.length > 0) {
           const address = accounts[0];
@@ -94,11 +117,9 @@ export function WalletConnection() {
           },
         });
 
-        // Instead of showing a QR modal, if no injected provider exists,
-        // subscribe to the display_uri event and use deep linking.
+        // Subscribe to the display_uri event and use deep linking.
         provider.on("display_uri", (uri) => {
           console.log("Deep link URI:", uri);
-          // Directly navigate to the URI to trigger connection in mobile browsers.
           window.location.href = uri;
         });
 
@@ -166,6 +187,7 @@ export function WalletConnection() {
       setIsLoading(true);
       try {
         await disconnectWallet();
+        setSelectedEvmWalletType(null); // Clear the selected wallet type on disconnect.
       } catch (error) {
         showNotification("Failed to disconnect wallet. Please try again.", "error");
       } finally {
