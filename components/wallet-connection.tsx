@@ -13,7 +13,7 @@ import * as Clipboard from "expo-clipboard";
 
 // Create WalletConnect AppKit instance with your desired configuration
 const evmWalletConnect = createAppKit({
-  projectId: "YOUR_PROJECT_ID", // Replace with your actual WalletConnect project id
+  projectId: "f7cfd96fa6e20c1aa0ad95b2fa391c31", // Replace with your actual WalletConnect project id
   chains: [mainnet],
   defaultChain: mainnet,
   clipboardClient: {
