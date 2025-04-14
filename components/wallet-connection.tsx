@@ -16,40 +16,43 @@ export function WalletConnection() {
   const { showModal } = useModal();
   const [isLoading, setIsLoading] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
-  const [showEvmModal, setShowEvmModal] = useState(false);
   const dropdownRef = useRef(null);
   const [wcProvider, setWcProvider] = useState(null);
+  // Ref for storing the initialized AppKit instance
+  const appKitRef = useRef(null);
 
-  // Initialize Reown AppKit
+  // Initialize Reown AppKit (with extra options to configure the wallet modal)
   useEffect(() => {
     const initReownAppKit = async () => {
       try {
-        // Create Ethereum adapter
+        // Create Ethereum adapter with your RPC chain details and wallet IDs
         const ethereumAdapter = createEthereumAdapter({
           projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
-          chains: [{
-            id: 12211,
-            name: "Kasplex Testnet",
-            rpcUrl: "https://www.kasplextest.xyz",
-            nativeCurrency: {
-              name: "KAS",
-              symbol: "KAS",
-              decimals: 18,
+          chains: [
+            {
+              id: 12211,
+              name: "Kasplex Testnet",
+              rpcUrl: "https://www.kasplextest.xyz",
+              nativeCurrency: {
+                name: "KAS",
+                symbol: "KAS",
+                decimals: 18,
+              },
             },
-          }],
+          ],
           wallets: [
-            // Phantom
-            {id: "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393"},
-            // MetaMask
-            {id: "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96"},
-            // Trust Wallet
-            {id: "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0"},
-            // Uniswap Wallet
-            {id: "c03dfee351b6fcc421b4494ea33b9d4b92a984f87aa76d1663bb28705e95034a"}
+            { id: "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393" }, // Phantom (if applicable)
+            { id: "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96" }, // MetaMask
+            { id: "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0" }, // Trust Wallet
+            { id: "c03dfee351b6fcc421b4494ea33b9d4b92a984f87aa76d1663bb28705e95034a" }  // Uniswap
           ]
         });
 
-        // Create AppKit with the adapter
+        // Create AppKit with additional configuration options including:
+        // - defaultChain (your Kasplex testnet)
+        // - featuredWalletIds (to prioritize the four wallets in the modal)
+        // - debug mode and extra feature toggles
+        // - connectorImages to override default images
         const appKit = createAppKit({
           projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
           adapters: [ethereumAdapter],
@@ -59,13 +62,44 @@ export function WalletConnection() {
             url: "https://kasino-dev-38d41436adab.herokuapp.com",
             icons: ["https://your_wallet_icon.png"],
           },
-          themeMode: 'dark',
+          themeMode: "dark",
           themeVariables: {
-            '--w3m-accent': '#49EACB',
-          }
+            "--w3m-accent": "#49EACB",
+          },
+          defaultChain: {
+            id: 12211,
+            name: "Kasplex Testnet",
+            rpcUrl: "https://www.kasplextest.xyz",
+            nativeCurrency: {
+              name: "KAS",
+              symbol: "KAS",
+              decimals: 18,
+            },
+          },
+          featuredWalletIds: [
+            "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393", // Phantom
+            "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96", // MetaMask
+            "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0", // Trust Wallet
+            "c03dfee351b6fcc421b4494ea33b9d4b92a984f87aa76d1663bb28705e95034a"  // Uniswap
+          ],
+          debug: true,
+          features: {
+            swaps: true,
+            email: false,     // disable email login if not needed
+            socials: [],      // disable socials by passing an empty array
+            emailShowWallets: true,
+          },
+          connectorImages: {
+            coinbaseWallet: "https://images.mydapp.com/coinbase.png",
+            walletConnect: "https://images.mydapp.com/walletconnect.png",
+            appKitAuth: "https://images.mydapp.com/auth.png",
+          },
         });
-        
-        // Get the Ethereum provider
+
+        // Store the appKit instance so its methods can be used later (e.g. to open the modal)
+        appKitRef.current = appKit;
+
+        // Optionally get the underlying Ethereum provider (if needed for direct interactions)
         const provider = await ethereumAdapter.getProvider();
         setWcProvider(provider);
       } catch (error) {
@@ -76,7 +110,7 @@ export function WalletConnection() {
     initReownAppKit();
   }, []);
 
-  // Close the main dropdown when clicking outside.
+  // Close the main dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -96,16 +130,7 @@ export function WalletConnection() {
     setShowOptions(false);
   };
 
-  // Toggle EVM wallet sub-dropdown.
-  const openEvmWalletModal = () => {
-    setShowEvmModal(true);
-  };
-
-  const closeEvmWalletModal = () => {
-    setShowEvmModal(false);
-  };
-
-  // Kasware connection logic (remains unchanged).
+  // Kasware connection logic (remains unchanged)
   const handleKaswareConnect = async () => {
     setIsLoading(true);
     closeWalletOptions();
@@ -124,60 +149,21 @@ export function WalletConnection() {
     }
   };
 
-  // EVM wallet connection using Reown AppKit
-  const handleSelectEvmWallet = async (walletType) => {
-    setIsLoading(true);
-    closeEvmWalletModal();
+  // EVM wallet connection using Reown AppKit modal
+  const handleEvmWalletConnect = async () => {
     closeWalletOptions();
-    
+    if (!appKitRef.current) {
+      showNotification("Wallet connection module is not initialized.", "error");
+      return;
+    }
     try {
-      if (!wcProvider) {
-        throw new Error("WalletConnect provider not initialized");
-      }
-      
-      // Connect to the specific wallet based on walletType
-      let walletId;
-      switch (walletType) {
-        case "phantom":
-          walletId = "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393";
-          break;
-        case "metamask":
-          walletId = "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96";
-          break;
-        case "trust":
-          walletId = "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0";
-          break;
-        case "uniswap":
-          walletId = "c03dfee351b6fcc421b4494ea33b9d4b92a984f87aa76d1663bb28705e95034a";
-          break;
-        default:
-          throw new Error("Invalid wallet type");
-      }
-      
-      // Connect with the specific wallet
-      await wcProvider.connect({
-        walletId: walletId,
-      });
-      
-      // Request accounts
-      const accounts = await wcProvider.request({ method: "eth_requestAccounts" });
-      
-      if (accounts && accounts.length > 0) {
-        const address = accounts[0];
-        
-        // Switch to Kasplex network
-        await wcProvider.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: "0x2FB3" }], // 12211 in hex
-        });
-        
-        await checkUserAccount(address);
-      } else {
-        throw new Error("No accounts returned");
-      }
+      setIsLoading(true);
+      // Open the built-in Reown AppKit modal so the user can choose one of the
+      // featured (or custom) EVM wallets. This replaces the custom EVM wallet modal.
+      await appKitRef.current.openModal();
     } catch (error) {
-      console.error(`Error connecting to ${walletType} wallet:`, error);
-      showNotification(`Failed to connect ${walletType} wallet. Please try again.`, "error");
+      console.error("Error opening EVM wallet modal:", error);
+      showNotification("Failed to open wallet modal. Please try again.", "error");
     } finally {
       setIsLoading(false);
     }
@@ -229,8 +215,8 @@ export function WalletConnection() {
     debounce(async () => {
       setIsLoading(true);
       try {
-        // Disconnect WalletConnect if it was used
-        if (wcProvider && wcProvider.connected) {
+        // If the WalletConnect provider was used and supports disconnect, call it.
+        if (wcProvider && wcProvider.connected && wcProvider.disconnect) {
           await wcProvider.disconnect();
         }
         await disconnectWallet();
@@ -282,53 +268,15 @@ export function WalletConnection() {
           </div>
           <div
             className="flex items-center cursor-pointer hover:bg-[#3A3A3A] p-2 rounded transition-all mt-2"
-            onClick={openEvmWalletModal}
+            onClick={handleEvmWalletConnect}
           >
             <img src="/walletconnectlogo.webp" alt="EVM Wallet (WalletConnect)" className="w-8 h-8 mr-3" />
             <span>EVM Wallet (WalletConnect)</span>
           </div>
         </div>
       )}
-      {showEvmModal && (
-        <div className="absolute top-full right-0 mt-2 w-64 z-50 bg-[#2F2F2F] text-white rounded-md shadow-lg p-4">
-          <h2 className="text-lg font-semibold mb-3">Select EVM Wallet</h2>
-          <div className="flex flex-col space-y-3">
-            <button
-              onClick={() => handleSelectEvmWallet("phantom")}
-              className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
-            >
-              <img src="/phantom-logo.webp" alt="Phantom" className="w-8 h-8 mr-3" />
-              <span>Phantom</span>
-            </button>
-            <button
-              onClick={() => handleSelectEvmWallet("metamask")}
-              className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
-            >
-              <img src="/metamask-logo.webp" alt="MetaMask" className="w-8 h-8 mr-3" />
-              <span>MetaMask</span>
-            </button>
-            <button
-              onClick={() => handleSelectEvmWallet("trust")}
-              className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
-            >
-              <img src="/trustwallet-logo.webp" alt="Trust Wallet" className="w-8 h-8 mr-3" />
-              <span>Trust Wallet</span>
-            </button>
-            <button
-              onClick={() => handleSelectEvmWallet("uniswap")}
-              className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
-            >
-              <img src="/uniswap-logo.webp" alt="Uniswap Wallet" className="w-8 h-8 mr-3" />
-              <span>Uniswap Wallet</span>
-            </button>
-          </div>
-          <button onClick={closeEvmWalletModal} className="mt-4 text-red-400 hover:underline">
-            Cancel
-          </button>
-        </div>
-      )}
-      
-      {/* Add the AppKit button component */}
+
+      {/* Render the AppKit button (this can serve as an alternate way to trigger the modal) */}
       <appkit-button />
     </div>
   );
