@@ -9,6 +9,7 @@ import { Loader2 } from "lucide-react";
 import { debounce } from "underscore";
 import { siweConfig } from "./siweConfig";
 import { EthereumProvider } from "@walletconnect/ethereum-provider";
+import { W3mAppKit } from "@walletconnect/app-kit";
 
 export function WalletConnection() {
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
@@ -17,6 +18,46 @@ export function WalletConnection() {
   const [showOptions, setShowOptions] = useState(false);
   const [showEvmModal, setShowEvmModal] = useState(false);
   const dropdownRef = useRef(null);
+  const [wcProvider, setWcProvider] = useState(null);
+
+  // Initialize WalletConnect App Kit
+  useEffect(() => {
+    const initWalletConnectKit = async () => {
+      try {
+        const appKit = new W3mAppKit({
+          projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
+          metadata: {
+            name: "KasCasino Wallet",
+            description: "Wallet for KasCasino",
+            url: "https://kasino-dev-38d41436adab.herokuapp.com/",
+            icons: ["https://your_wallet_icon.png"],
+          },
+          defaultChain: {
+            id: 12211,
+            rpcUrl: "https://www.kasplextest.xyz",
+          },
+          includeWalletIds: [
+            // Phantom
+            "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393",
+            // MetaMask
+            "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96",
+            // Trust Wallet
+            "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0",
+            // Uniswap Wallet
+            "c03dfee351b6fcc421b4494ea33b9d4b92a984f87aa76d1663bb28705e95034a"
+          ],
+        });
+        
+        // Store the provider for later use
+        const provider = await appKit.getEthereumProvider();
+        setWcProvider(provider);
+      } catch (error) {
+        console.error("Failed to initialize WalletConnect App Kit:", error);
+      }
+    };
+
+    initWalletConnectKit();
+  }, []);
 
   // Close the main dropdown when clicking outside.
   useEffect(() => {
@@ -66,54 +107,78 @@ export function WalletConnection() {
     }
   };
 
-  // EVM wallet connection without QR modal (using injected provider in chrome extensions).
+  // EVM wallet connection using WalletConnect App Kit
   const handleSelectEvmWallet = async (walletType) => {
     setIsLoading(true);
     closeEvmWalletModal();
+    closeWalletOptions();
+    
     try {
-      // Use injected provider (e.g., MetaMask, Phantom) if available.
-      if (window.ethereum) {
-        const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
-        if (accounts && accounts.length > 0) {
-          const address = accounts[0];
-          await checkUserAccount(address);
-        }
+      if (!wcProvider) {
+        throw new Error("WalletConnect provider not initialized");
+      }
+      
+      // Configure the provider to use Kasplex network
+      await wcProvider.request({
+        method: "wallet_addEthereumChain",
+        params: [
+          {
+            chainId: "0x2FB3", // 12211 in hex
+            chainName: "Kasplex Testnet",
+            nativeCurrency: {
+              name: "KAS",
+              symbol: "KAS",
+              decimals: 18,
+            },
+            rpcUrls: ["https://www.kasplextest.xyz"],
+            blockExplorerUrls: ["https://explorer.kasplextest.xyz"],
+          },
+        ],
+      });
+      
+      // Connect to the specific wallet based on walletType
+      let walletId;
+      switch (walletType) {
+        case "phantom":
+          walletId = "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393";
+          break;
+        case "metamask":
+          walletId = "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96";
+          break;
+        case "trust":
+          walletId = "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0";
+          break;
+        case "uniswap":
+          walletId = "c03dfee351b6fcc421b4494ea33b9d4b92a984f87aa76d1663bb28705e95034a";
+          break;
+        default:
+          throw new Error("Invalid wallet type");
+      }
+      
+      // Connect with the specific wallet
+      await wcProvider.connectWallet({
+        walletId: walletId,
+      });
+      
+      // Request accounts
+      const accounts = await wcProvider.request({ method: "eth_requestAccounts" });
+      
+      if (accounts && accounts.length > 0) {
+        const address = accounts[0];
+        
+        // Switch to Kasplex network
+        await wcProvider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: "0x2FB3" }], // 12211 in hex
+        });
+        
+        await checkUserAccount(address);
       } else {
-        // Fallback: Initialize WalletConnect's EthereumProvider.
-        const provider = await EthereumProvider.init({
-          projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
-          metadata: {
-            name: "KasCasino Wallet",
-            description: "Wallet for KasCasino",
-            url: "https://kasino-dev-38d41436adab.herokuapp.com/",
-            icons: ["https://your_wallet_icon.png"],
-          },
-          optionalChains: [12211],
-          rpcMap: {
-            12211: "https://www.kasplextest.xyz",
-          },
-        });
-
-        // Instead of showing a QR modal, if no injected provider exists,
-        // subscribe to the display_uri event and use deep linking.
-        provider.on("display_uri", (uri) => {
-          console.log("Deep link URI:", uri);
-          // Directly navigate to the URI to trigger connection in mobile browsers.
-          window.location.href = uri;
-        });
-
-        // Call connect() to establish a session.
-        const session = await provider.connect();
-        if (session && session.accounts && session.accounts.length > 0) {
-          const address = session.accounts[0];
-          await checkUserAccount(address);
-        } else {
-          throw new Error("No accounts returned from the session.");
-        }
+        throw new Error("No accounts returned");
       }
     } catch (error) {
-      console.error("Error using WalletConnect for EVM wallet connection:", error);
-      showNotification("Failed to connect EVM wallet. Please try again.", "error");
+      console.error(`Error connecting to ${walletType} wallet:`, error);
+      showNotification(`Failed to connect ${walletType} wallet. Please try again.`, "error");
     } finally {
       setIsLoading(false);
     }
@@ -165,6 +230,10 @@ export function WalletConnection() {
     debounce(async () => {
       setIsLoading(true);
       try {
+        // Disconnect WalletConnect if it was used
+        if (wcProvider && wcProvider.connected) {
+          await wcProvider.disconnect();
+        }
         await disconnectWallet();
       } catch (error) {
         showNotification("Failed to disconnect wallet. Please try again.", "error");
@@ -172,7 +241,7 @@ export function WalletConnection() {
         setIsLoading(false);
       }
     }, 300),
-    [disconnectWallet, showNotification]
+    [disconnectWallet, showNotification, wcProvider]
   );
 
   return (
