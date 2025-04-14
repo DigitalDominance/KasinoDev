@@ -34,27 +34,28 @@ const kasplexTestnet = defineChain({
 });
 
 // -----------------------------------------------------------------------
-// 2. React component for wallet connection (Kasware & WalletKit)
+// 2. React component for wallet connection integrating both Kasware (unchanged)
+// and WalletKit (using automatic pairing via the Pairing API)
 export function WalletConnection() {
-  // Kasware wallet integration (unchanged)
+  // Kasware integration (unchanged)
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
   const { showModal } = useModal();
 
-  // State for WalletKit and connected EVM wallet address
+  // Local state for WalletKit instance and connected EVM wallet address.
   const [walletKit, setWalletKit] = useState<any>(null);
   const [walletKitAddress, setWalletKitAddress] = useState<string | null>(null);
 
-  // UI state for loading and dropdown modals
+  // UI state for loading and dropdown modals.
   const [isLoading, setIsLoading] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [showEvmModal, setShowEvmModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Combined connection state: either Kasware or WalletKit is connected.
+  // Combined connection state: either Kasware or WalletKit (EVM) is connected.
   const isWalletConnected = isConnected || Boolean(walletKitAddress);
 
   // ---------------------------------------------------------------------
-  // Helper functions to show or close the wallet options dropdown.
+  // Helper functions for dropdown.
   const openWalletOptions = () => setShowOptions((prev) => !prev);
   const closeWalletOptions = () => {
     setShowOptions(false);
@@ -62,7 +63,7 @@ export function WalletConnection() {
   };
 
   // ---------------------------------------------------------------------
-  // Initialization: create a Core instance with your project ID and initialize WalletKit.
+  // Initialization: Create a Core instance and initialize WalletKit.
   useEffect(() => {
     async function initWalletKit() {
       try {
@@ -88,27 +89,29 @@ export function WalletConnection() {
   }, []);
 
   // ---------------------------------------------------------------------
-  // Automatic Pairing: if a pairing URI is provided via the URL (query parameter "wc"),
-  // attempt to pair automatically.
+  // Automatic Pairing: Check for a pairing URI in the URL query parameter ("wc") and pair automatically.
   useEffect(() => {
     if (!walletKit) return;
     const searchParams = new URLSearchParams(window.location.search);
-    const pairingUri = searchParams.get("wc");
-    if (pairingUri) {
-      (async () => {
-        try {
-          await walletKit.pair({ uri: pairingUri });
-          // Optionally, remove the pairing URI from the URL after successful pairing.
-        } catch (error) {
-          console.error("Automatic pairing failed:", error);
-          showNotification("Pairing failed. Please try again.", "error");
+    let pairingUri = searchParams.get("wc");
+    (async () => {
+      try {
+        // If no pairing URI is found in the URL, generate one automatically.
+        if (!pairingUri) {
+          const { uri } = await walletKit.core.pairing.create();
+          pairingUri = uri;
+          // Optionally, you might update the URL or store this URI for further use.
         }
-      })();
-    }
+        await walletKit.pair({ uri: pairingUri });
+      } catch (error) {
+        console.error("Automatic pairing failed:", error);
+        showNotification("Pairing failed. Please try again.", "error");
+      }
+    })();
   }, [walletKit, showNotification]);
 
   // ---------------------------------------------------------------------
-  // Session Proposal Handling: when a session proposal is received, build approved namespaces and approve.
+  // Session Proposal Handling: Upon receiving a session proposal, build approved namespaces and approve.
   useEffect(() => {
     if (!walletKit) return;
     const onSessionProposal = async (proposal: any) => {
@@ -132,12 +135,10 @@ export function WalletConnection() {
             },
           },
         });
-
         const session = await walletKit.approveSession({
           id: proposal.id,
           namespaces: approvedNamespaces,
         });
-
         if (session.namespaces && session.namespaces.eip155?.accounts.length > 0) {
           const parts = session.namespaces.eip155.accounts[0].split(":");
           setWalletKitAddress(parts[2]);
@@ -150,14 +151,13 @@ export function WalletConnection() {
         });
       }
     };
-
     walletKit.on("session_proposal", onSessionProposal);
     return () => walletKit.off("session_proposal", onSessionProposal);
   }, [walletKit, walletKitAddress]);
 
   // ---------------------------------------------------------------------
-  // EVM Wallet Connection via WalletKit: when a user selects an EVM wallet,
-  // retrieve the pairing URI from the URL automatically and call pair().
+  // EVM Wallet Connection via WalletKit: When an EVM wallet type is selected,
+  // retrieve (or generate) the pairing URI and invoke pairing.
   const handleSelectEvmWallet = async (
     walletType: "metamask" | "phantom" | "trust" | "uniswap"
   ) => {
@@ -182,15 +182,14 @@ export function WalletConnection() {
     closeWalletOptions();
     try {
       const searchParams = new URLSearchParams(window.location.search);
-      const pairingUri = searchParams.get("wc");
+      let pairingUri = searchParams.get("wc");
       if (!pairingUri) {
-        // Instead of throwing an error, show a notification so pairing can be re‑triggered by a proper dapp deep link.
-        showNotification("No pairing URI found. Ensure the dapp provides one automatically.", "error");
-        setIsLoading(false);
-        return;
+        // If not provided, generate one automatically.
+        const { uri } = await walletKit.core.pairing.create();
+        pairingUri = uri;
       }
       await walletKit.pair({ uri: pairingUri, includeWalletIds: walletId ? [walletId] : undefined });
-      // When pairing succeeds, session proposal events will update walletKitAddress.
+      // Successful pairing will lead to session proposals that update walletKitAddress.
     } catch (error) {
       console.error("Error during WalletKit pairing:", error);
       showNotification("Failed to connect EVM wallet. Please try again.", "error");
@@ -222,7 +221,7 @@ export function WalletConnection() {
   };
 
   // ---------------------------------------------------------------------
-  // Backend Account Verification: once connected, verify the user's account.
+  // Backend Account Verification: Once connected, verify the user account.
   useEffect(() => {
     if (walletKitAddress) {
       checkUserAccount(walletKitAddress);
@@ -271,7 +270,7 @@ export function WalletConnection() {
   };
 
   // ---------------------------------------------------------------------
-  // Disconnect Logic: disconnect both Kasware and WalletKit sessions.
+  // Disconnect Logic: Disconnect both Kasware and WalletKit sessions.
   const disconnectWalletKit = async () => {
     if (walletKit) {
       try {
@@ -305,7 +304,7 @@ export function WalletConnection() {
   );
 
   // ---------------------------------------------------------------------
-  // Render Component UI
+  // Render Component UI.
   return (
     <div className="flex items-center space-x-4 relative">
       <WalletStatus />
@@ -330,7 +329,7 @@ export function WalletConnection() {
           </Button>
         </motion.div>
       )}
-      
+
       {showOptions && (
         <div
           ref={dropdownRef}
