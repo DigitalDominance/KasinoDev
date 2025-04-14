@@ -8,14 +8,32 @@ import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import { debounce } from "underscore";
 import { createAppKit } from "@walletconnect/appkit";
-import { mainnet } from "@wagmi/core/chains";
 import * as Clipboard from "expo-clipboard";
+
+// Define custom chain for Kasplex Testnet
+const kasplexChain = {
+  id: 12211,
+  name: "Kasplex Testnet",
+  network: "kasplex",
+  nativeCurrency: {
+    decimals: 18,
+    name: "KAS",
+    symbol: "KAS",
+  },
+  rpcUrls: {
+    default: "https://www.kasplextest.xyz",
+  },
+  blockExplorers: {
+    default: { name: "Kasplex Explorer", url: "https://explorer.kasplextest.xyz" },
+  },
+  testnet: true,
+};
 
 // Create WalletConnect AppKit instance with your desired configuration
 const evmWalletConnect = createAppKit({
-  projectId: "f7cfd96fa6e20c1aa0ad95b2fa391c31", // Replace with your actual WalletConnect project id
-  chains: [mainnet],
-  defaultChain: mainnet,
+  projectId: "YOUR_PROJECT_ID", // Replace with your actual WalletConnect project id
+  chains: [kasplexChain],
+  defaultChain: kasplexChain,
   clipboardClient: {
     setString: async (value) => {
       await Clipboard.setStringAsync(value);
@@ -76,7 +94,7 @@ const evmWalletConnect = createAppKit({
   },
   enableAnalytics: true,
   chainImages: {
-    1: "https://my.images.com/eth.png",
+    12211: "https://yourdomain.com/your-kasplex-image.png", // Replace with your custom chain image if needed
   },
   connectorImages: {
     coinbaseWallet: "https://images.mydapp.com/coinbase.png",
