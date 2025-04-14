@@ -20,11 +20,12 @@ export function WalletConnection() {
   const dropdownRef = useRef(null);
   const [wcProvider, setWcProvider] = useState(null);
 
-  // Initialize WalletConnect App Kit
+  // Initialize Reown AppKit
   useEffect(() => {
-    const initWalletConnectKit = async () => {
+    const initReownAppKit = async () => {
       try {
-        const appKit = new W3mAppKit({
+        // Create a new instance of AppKit with the correct configuration
+        const appKit = new AppKit({
           projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
           metadata: {
             name: "KasCasino Wallet",
@@ -32,31 +33,40 @@ export function WalletConnection() {
             url: "https://kasino-dev-38d41436adab.herokuapp.com",
             icons: ["https://your_wallet_icon.png"],
           },
-          defaultChain: {
+          chains: [{
             id: 12211,
+            name: "Kasplex Testnet",
             rpcUrl: "https://www.kasplextest.xyz",
-          },
-          includeWalletIds: [
+            nativeCurrency: {
+              name: "KAS",
+              symbol: "KAS",
+              decimals: 18,
+            },
+          }],
+          wallets: [
             // Phantom
-            "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393",
+            {id: "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393"},
             // MetaMask
-            "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96",
+            {id: "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96"},
             // Trust Wallet
-            "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0",
+            {id: "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0"},
             // Uniswap Wallet
-            "c03dfee351b6fcc421b4494ea33b9d4b92a984f87aa76d1663bb28705e95034a"
+            {id: "c03dfee351b6fcc421b4494ea33b9d4b92a984f87aa76d1663bb28705e95034a"}
           ],
         });
         
-        // Store the provider for later use
+        // Initialize the AppKit
+        await appKit.initialize();
+        
+        // Get the Ethereum provider
         const provider = await appKit.getEthereumProvider();
         setWcProvider(provider);
       } catch (error) {
-        console.error("Failed to initialize WalletConnect App Kit:", error);
+        console.error("Failed to initialize Reown AppKit:", error);
       }
     };
 
-    initWalletConnectKit();
+    initReownAppKit();
   }, []);
 
   // Close the main dropdown when clicking outside.
@@ -107,7 +117,7 @@ export function WalletConnection() {
     }
   };
 
-  // EVM wallet connection using WalletConnect App Kit
+  // EVM wallet connection using Reown AppKit
   const handleSelectEvmWallet = async (walletType) => {
     setIsLoading(true);
     closeEvmWalletModal();
@@ -117,24 +127,6 @@ export function WalletConnection() {
       if (!wcProvider) {
         throw new Error("WalletConnect provider not initialized");
       }
-      
-      // Configure the provider to use Kasplex network
-      await wcProvider.request({
-        method: "wallet_addEthereumChain",
-        params: [
-          {
-            chainId: "0x2FB3", // 12211 in hex
-            chainName: "Kasplex Testnet",
-            nativeCurrency: {
-              name: "KAS",
-              symbol: "KAS",
-              decimals: 18,
-            },
-            rpcUrls: ["https://www.kasplextest.xyz"],
-            blockExplorerUrls: ["https://explorer.kasplextest.xyz"],
-          },
-        ],
-      });
       
       // Connect to the specific wallet based on walletType
       let walletId;
@@ -156,7 +148,7 @@ export function WalletConnection() {
       }
       
       // Connect with the specific wallet
-      await wcProvider.connectWallet({
+      await wcProvider.connect({
         walletId: walletId,
       });
       
