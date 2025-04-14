@@ -10,17 +10,52 @@ import { debounce } from "underscore";
 import { siweConfig } from "./siweConfig";
 import { EthereumProvider } from "@walletconnect/ethereum-provider";
 
+// Helper to choose the injected provider based on the desired wallet type.
+// If multiple providers are injected (via window.ethereum.providers) then the one matching
+// the desired wallet type (e.g. metamask or phantom) is returned.
+// Otherwise, if only one provider is available, we check if it matches the desired type.
+const getInjectedProvider = (walletType) => {
+  if (typeof window === "undefined" || !window.ethereum) return null;
+
+  const eth = window.ethereum;
+  let provider = null;
+  
+  // If multiple providers exist, choose the one matching the wallet type.
+  if (eth.providers && Array.isArray(eth.providers)) {
+    if (walletType === "metamask") {
+      provider = eth.providers.find((p) => p.isMetaMask);
+    } else if (walletType === "phantom") {
+      provider = eth.providers.find((p) => p.isPhantom);
+    } else if (walletType === "trust") {
+      provider = eth.providers.find((p) => p.isTrust);
+    } else if (walletType === "uniswap") {
+      provider = eth.providers.find((p) => p.isUniswap);
+    }
+  } else {
+    // Only one provider exists. Check that it matches the desired type.
+    if (
+      (walletType === "metamask" && eth.isMetaMask) ||
+      (walletType === "phantom" && eth.isPhantom) ||
+      (walletType === "trust" && eth.isTrust) ||
+      (walletType === "uniswap" && eth.isUniswap)
+    ) {
+      provider = eth;
+    }
+  }
+  return provider;
+};
+
 export function WalletConnection() {
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
   const { showModal } = useModal();
   const [isLoading, setIsLoading] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [showEvmModal, setShowEvmModal] = useState(false);
-  // Track the selected EVM wallet type
+  // Track the selected EVM wallet type.
   const [selectedEvmWalletType, setSelectedEvmWalletType] = useState(null);
   const dropdownRef = useRef(null);
 
-  // Close the main dropdown when clicking outside.
+  // Close dropdown if clicking outside.
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -31,25 +66,13 @@ export function WalletConnection() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Toggle main dropdown.
-  const openWalletOptions = () => {
-    setShowOptions((prev) => !prev);
-  };
+  // Toggles for options.
+  const openWalletOptions = () => setShowOptions((prev) => !prev);
+  const closeWalletOptions = () => setShowOptions(false);
+  const openEvmWalletModal = () => setShowEvmModal(true);
+  const closeEvmWalletModal = () => setShowEvmModal(false);
 
-  const closeWalletOptions = () => {
-    setShowOptions(false);
-  };
-
-  // Toggle EVM wallet sub-dropdown.
-  const openEvmWalletModal = () => {
-    setShowEvmModal(true);
-  };
-
-  const closeEvmWalletModal = () => {
-    setShowEvmModal(false);
-  };
-
-  // Kasware connection logic (remains unchanged).
+  // Kasware connection remains unchanged.
   const handleKaswareConnect = async () => {
     setIsLoading(true);
     closeWalletOptions();
@@ -68,12 +91,12 @@ export function WalletConnection() {
     }
   };
 
-  // EVM wallet connection logic using the proper injected provider from WalletKit.
+  // EVM connection handler using the proper injected provider.
   const handleSelectEvmWallet = async (walletType) => {
     setIsLoading(true);
     closeEvmWalletModal();
 
-    // If switching wallet types, disconnect the current provider.
+    // If switching wallet types, disconnect any prior wallet.
     if (selectedEvmWalletType && selectedEvmWalletType !== walletType) {
       await disconnectWallet();
       setSelectedEvmWalletType(null);
@@ -81,26 +104,12 @@ export function WalletConnection() {
     setSelectedEvmWalletType(walletType);
 
     try {
-      let provider = window.ethereum;
-      // If there are multiple providers available, choose the one matching walletType.
-      if (provider && provider.providers && Array.isArray(provider.providers)) {
-        if (walletType === "metamask") {
-          provider = provider.providers.find((p) => p.isMetaMask);
-        } else if (walletType === "phantom") {
-          provider = provider.providers.find((p) => p.isPhantom);
-        } else if (walletType === "trust") {
-          provider = provider.providers.find((p) => p.isTrust);
-        } else if (walletType === "uniswap") {
-          provider = provider.providers.find((p) => p.isUniswap);
-        }
-      }
-
+      const provider = getInjectedProvider(walletType);
       if (!provider) {
         showNotification(`${walletType} provider not found.`, "error");
         setIsLoading(false);
         return;
       }
-
       const accounts = await provider.request({ method: "eth_requestAccounts" });
       if (accounts && accounts.length > 0) {
         const address = accounts[0];
@@ -195,6 +204,7 @@ export function WalletConnection() {
           </Button>
         </motion.div>
       )}
+
       {showOptions && (
         <div
           ref={dropdownRef}
@@ -217,6 +227,7 @@ export function WalletConnection() {
           </div>
         </div>
       )}
+
       {showEvmModal && (
         <div className="absolute top-full right-0 mt-2 w-64 z-50 bg-[#2F2F2F] text-white rounded-md shadow-lg p-4">
           <h2 className="text-lg font-semibold mb-3">Select EVM Wallet</h2>
