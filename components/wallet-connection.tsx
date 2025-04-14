@@ -8,11 +8,13 @@ import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import { debounce } from "underscore";
 import { siweConfig } from "./siweConfig";
-import { createAppKit } from "@reown/appkit/react";
 import { defineChain } from "@reown/appkit/networks";
-import { EthersAdapter } from "@reown/appkit-adapter-ethers";
 
-// 1. Define the Kasplex Testnet chain using defineChain
+// Import WalletKit hook from Reown WalletKit (this is the new integration)
+// Ensure that you have installed and set up the WalletKit provider in your app root.
+import { useWalletKit } from "@reown/walletkit/react";
+
+// 1. Define the Kasplex Testnet chain (chain ID 12211) using defineChain
 const kasplexTestnet = defineChain({
   id: 12211,
   caipNetworkId: "eip155:12211",
@@ -32,83 +34,21 @@ const kasplexTestnet = defineChain({
 });
 
 export function WalletConnection() {
+  // Context from your Kasware integration
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
   const { showModal } = useModal();
+
+  // WalletKit hook – this handles EVM wallet connection via Reown WalletKit
+  const { openModal: openWalletKitModal, address: walletKitAddress } = useWalletKit();
+
   const [isLoading, setIsLoading] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
-  const dropdownRef = useRef(null);
-  const [wcProvider, setWcProvider] = useState(null);
-  // Ref for storing the initialized AppKit instance (for EVM wallet modal)
-  const appKitRef = useRef(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // 2. Initialize Reown AppKit for EVM wallets with includeWalletIds (AppKit will handle wallet selection)
+  // 2. Dropdown: auto-close if clicking outside
   useEffect(() => {
-    const initReownAppKit = async () => {
-      try {
-        // Create the Ethers adapter with your projectId, networks, and desired wallet IDs.
-        const ethereumAdapter = new EthersAdapter({
-          projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
-          networks: [kasplexTestnet],
-          wallets: [
-            { id: "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393" }, // Phantom
-            { id: "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96" }, // MetaMask
-            { id: "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0" }, // Trust Wallet
-            { id: "fd20dc426fb37566d803205b19bbc1d4096b248ac04548e3cfb6b3a38bd033aa" }  // Uniswap Wallet (mobile)
-          ],
-        });
-
-        // Initialize AppKit with branding metadata and the includeWalletIds option.
-        // This configuration forces dark mode and sets Kasplex Testnet as the default network.
-        const appKit = createAppKit({
-          projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
-          adapters: [ethereumAdapter],
-          networks: [kasplexTestnet],
-          metadata: {
-            name: "KasCasino Wallet",
-            description: "Wallet for KasCasino",
-            url: "https://kasino-dev-38d41436adab.herokuapp.com",
-            icons: ["https://your_wallet_icon.png"],
-          },
-          themeMode: "dark",
-          themeVariables: {
-            "--w3m-accent": "#49EACB",
-          },
-          defaultChain: kasplexTestnet,
-          includeWalletIds: [
-            "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393", // Phantom
-            "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96", // MetaMask
-            "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0", // Trust Wallet
-            "fd20dc426fb37566d803205b19bbc1d4096b248ac04548e3cfb6b3a38bd033aa", // Uniswap Wallet (mobile)
-          ],
-          debug: true,
-          features: {
-            swaps: true,
-            email: false,
-            socials: [],
-            emailShowWallets: true,
-          },
-          connectorImages: {
-            coinbaseWallet: "https://images.mydapp.com/coinbase.png",
-            walletConnect: "https://images.mydapp.com/walletconnect.png",
-            appKitAuth: "https://images.mydapp.com/auth.png",
-          },
-        });
-
-        appKitRef.current = appKit;
-        const provider = await ethereumAdapter.getProvider();
-        setWcProvider(provider);
-      } catch (error) {
-        console.error("Failed to initialize Reown AppKit:", error);
-      }
-    };
-
-    initReownAppKit();
-  }, []);
-
-  // 3. Dropdown: close if clicking outside
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setShowOptions(false);
       }
     }
@@ -119,7 +59,7 @@ export function WalletConnection() {
   const openWalletOptions = () => setShowOptions((prev) => !prev);
   const closeWalletOptions = () => setShowOptions(false);
 
-  // 4. Kasware connection logic remains unchanged.
+  // 3. Kasware connection logic remains unchanged.
   const handleKaswareConnect = async () => {
     setIsLoading(true);
     closeWalletOptions();
@@ -138,26 +78,40 @@ export function WalletConnection() {
     }
   };
 
-  // 5. EVM wallet connection: use the AppKit modal to let the user choose from the specified wallets.
+  // 4. EVM wallet connection via WalletKit.
+  // When the user selects “EVM Wallet (WalletKit)”, we simply call openWalletKitModal,
+  // which will trigger the WalletKit modal listing your four supported wallets.
   const handleEvmWalletConnect = async () => {
     closeWalletOptions();
-    if (!appKitRef.current) {
-      showNotification("Wallet connection module is not initialized.", "error");
+    if (!openWalletKitModal) {
+      showNotification("WalletKit is not initialized.", "error");
       return;
     }
     try {
       setIsLoading(true);
-      await appKitRef.current.openModal();
+      await openWalletKitModal();
+      // The modal will handle the wallet selection.
+      // Once connected, the walletKitAddress will be updated.
     } catch (error) {
-      console.error("Error opening EVM wallet modal:", error);
+      console.error("Error opening WalletKit modal:", error);
       showNotification("Failed to open wallet modal. Please try again.", "error");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 6. Backend account check and network verification (Kasware logic)
-  const checkUserAccount = async (address) => {
+  // 5. Once the user connects with an EVM wallet via WalletKit,
+  // we automatically check their backend account.
+  useEffect(() => {
+    if (walletKitAddress) {
+      // You may wish to add additional checks (e.g. network verification) here.
+      checkUserAccount(walletKitAddress);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletKitAddress]);
+
+  // 6. Backend account check (same for both Kasware and WalletKit connections)
+  const checkUserAccount = async (address: string) => {
     try {
       const response = await fetch(`/api/user?walletAddress=${address}`);
       if (response.ok) {
@@ -176,8 +130,9 @@ export function WalletConnection() {
     }
   };
 
+  // 7. Network verification for Kasware (unchanged)
   const checkNetwork = async () => {
-    const kasware = window.kasware;
+    const kasware = (window as any).kasware;
     if (kasware) {
       try {
         const network = await kasware.getNetwork();
@@ -196,13 +151,11 @@ export function WalletConnection() {
     return false;
   };
 
+  // 8. Disconnect logic remains unchanged.
   const handleDisconnect = useCallback(
     debounce(async () => {
       setIsLoading(true);
       try {
-        if (wcProvider && wcProvider.connected && wcProvider.disconnect) {
-          await wcProvider.disconnect();
-        }
         await disconnectWallet();
       } catch (error) {
         showNotification("Failed to disconnect wallet. Please try again.", "error");
@@ -210,7 +163,7 @@ export function WalletConnection() {
         setIsLoading(false);
       }
     }, 300),
-    [disconnectWallet, showNotification, wcProvider]
+    [disconnectWallet, showNotification]
   );
 
   return (
@@ -255,29 +208,18 @@ export function WalletConnection() {
             className="flex items-center cursor-pointer hover:bg-[#3A3A3A] p-2 rounded transition-all"
             onClick={handleKaswareConnect}
           >
-            <img
-              src="/kaswarelogo.webp"
-              alt="Kasware Wallet"
-              className="w-8 h-8 mr-3"
-            />
+            <img src="/kaswarelogo.webp" alt="Kasware Wallet" className="w-8 h-8 mr-3" />
             <span>Kasware Wallet</span>
           </div>
           <div
             className="flex items-center cursor-pointer hover:bg-[#3A3A3A] p-2 rounded transition-all mt-2"
             onClick={handleEvmWalletConnect}
           >
-            <img
-              src="/walletconnectlogo.webp"
-              alt="EVM Wallet (WalletConnect)"
-              className="w-8 h-8 mr-3"
-            />
-            <span>EVM Wallet (WalletConnect)</span>
+            <img src="/walletconnectlogo.webp" alt="EVM Wallet (WalletKit)" className="w-8 h-8 mr-3" />
+            <span>EVM Wallet (WalletKit)</span>
           </div>
         </div>
       )}
-
-      {/* Render the AppKit button as an alternate modal trigger (optional) */}
-      <appkit-button />
     </div>
   );
 }
