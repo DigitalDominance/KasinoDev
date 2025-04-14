@@ -11,13 +11,12 @@ import { siweConfig } from "./siweConfig";
 import { EthereumProvider } from "@walletconnect/ethereum-provider";
 
 // Helper to choose the injected provider based solely on the clicked wallet type.
-// NOTE: This function will only return a provider if there is an explicit match in window.ethereum.providers.
-// It does not use window.ethereum as a fallback.
+// It first checks if multiple providers exist via window.ethereum.providers.
+// If not, it will check the single provider to see if its flag matches the walletType.
 const getInjectedProvider = (walletType) => {
   if (typeof window === "undefined" || !window.ethereum) return null;
   const eth = window.ethereum;
 
-  // Use the providers array if available.
   if (eth.providers && Array.isArray(eth.providers)) {
     if (walletType === "metamask") {
       return eth.providers.find((p) => p.isMetaMask) || null;
@@ -28,9 +27,23 @@ const getInjectedProvider = (walletType) => {
     } else if (walletType === "uniswap") {
       return eth.providers.find((p) => p.isUniswap) || null;
     }
+  } else {
+    // Only one provider exists—check if it explicitly indicates the desired wallet.
+    if (walletType === "metamask" && eth.isMetaMask) {
+      return eth;
+    }
+    if (walletType === "phantom" && eth.isPhantom) {
+      return eth;
+    }
+    if (walletType === "trust" && eth.isTrust) {
+      return eth;
+    }
+    if (walletType === "uniswap" && eth.isUniswap) {
+      return eth;
+    }
+    // No match found.
+    return null;
   }
-  // No multiple providers available – do not fall back to a default provider.
-  return null;
 };
 
 export function WalletConnection() {
@@ -79,7 +92,7 @@ export function WalletConnection() {
     }
   };
 
-  // EVM connection handler using the proper injected provider.
+  // EVM connection handler using the explicitly requested injected provider.
   const handleSelectEvmWallet = async (walletType) => {
     setIsLoading(true);
     closeEvmWalletModal();
@@ -189,11 +202,7 @@ export function WalletConnection() {
             disabled={isLoading}
             className="bg-gradient-to-r from-[#49EACB] to-[#49EACB]/80 hover:opacity-90 text-black font-semibold"
           >
-            {isLoading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              "Connect Wallet"
-            )}
+            {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Connect Wallet"}
           </Button>
         </motion.div>
       ) : (
@@ -203,11 +212,7 @@ export function WalletConnection() {
             disabled={isLoading}
             className="bg-gradient-to-r from-[#49EACB] to-[#49EACB]/80 hover:opacity-90 text-black font-semibold"
           >
-            {isLoading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              "Disconnect"
-            )}
+            {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Disconnect"}
           </Button>
         </motion.div>
       )}
