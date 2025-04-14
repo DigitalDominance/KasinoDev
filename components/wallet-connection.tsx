@@ -10,11 +10,11 @@ import { debounce } from "underscore";
 import { siweConfig } from "./siweConfig";
 import { defineChain } from "@reown/appkit/networks";
 
-// Import WalletKit hook from Reown WalletKit (this is the new integration)
-// Ensure that you have installed and set up the WalletKit provider in your app root.
+// Import the WalletKit hook from Reown WalletKit.
+// Ensure that you have installed and configured WalletKit (and its polyfills) as per the docs.
 import { useWalletKit } from "@reown/walletkit/react";
 
-// 1. Define the Kasplex Testnet chain (chain ID 12211) using defineChain
+// 1. Define the Kasplex Testnet chain (chain ID 12211)
 const kasplexTestnet = defineChain({
   id: 12211,
   caipNetworkId: "eip155:12211",
@@ -34,22 +34,24 @@ const kasplexTestnet = defineChain({
 });
 
 export function WalletConnection() {
-  // Context from your Kasware integration
+  // Kasware integration (existing functionality)
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
   const { showModal } = useModal();
 
-  // WalletKit hook – this handles EVM wallet connection via Reown WalletKit
+  // WalletKit hook for EVM wallet connection via Reown WalletKit
   const { openModal: openWalletKitModal, address: walletKitAddress } = useWalletKit();
 
   const [isLoading, setIsLoading] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
+  const [showEvmModal, setShowEvmModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // 2. Dropdown: auto-close if clicking outside
+  // Auto-close the dropdown if clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setShowOptions(false);
+        setShowEvmModal(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -57,9 +59,12 @@ export function WalletConnection() {
   }, []);
 
   const openWalletOptions = () => setShowOptions((prev) => !prev);
-  const closeWalletOptions = () => setShowOptions(false);
+  const closeWalletOptions = () => {
+    setShowOptions(false);
+    setShowEvmModal(false);
+  };
 
-  // 3. Kasware connection logic remains unchanged.
+  // Kasware connection logic remains unchanged.
   const handleKaswareConnect = async () => {
     setIsLoading(true);
     closeWalletOptions();
@@ -78,39 +83,54 @@ export function WalletConnection() {
     }
   };
 
-  // 4. EVM wallet connection via WalletKit.
-  // When the user selects “EVM Wallet (WalletKit)”, we simply call openWalletKitModal,
-  // which will trigger the WalletKit modal listing your four supported wallets.
-  const handleEvmWalletConnect = async () => {
-    closeWalletOptions();
-    if (!openWalletKitModal) {
-      showNotification("WalletKit is not initialized.", "error");
-      return;
+  // EVM wallet connection via WalletKit.
+  // Here we show a submenu with the four wallets so the user can pick one.
+  const handleSelectEvmWallet = async (walletType: "metamask" | "phantom" | "trust" | "uniswap") => {
+    let walletId: string | undefined;
+    switch (walletType) {
+      case "metamask":
+        walletId = "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96";
+        break;
+      case "phantom":
+        walletId = "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393";
+        break;
+      case "trust":
+        walletId = "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0";
+        break;
+      case "uniswap":
+        walletId = "c03dfee351b6fcc421b4494ea33b9d4b92a984f87aa76d1663bb28705e95034a";
+        break;
+      default:
+        walletId = undefined;
     }
+    setIsLoading(true);
+    closeWalletOptions();
     try {
-      setIsLoading(true);
-      await openWalletKitModal();
-      // The modal will handle the wallet selection.
-      // Once connected, the walletKitAddress will be updated.
+      // Here we call openWalletKitModal passing an option to include only the selected wallet ID.
+      await openWalletKitModal({ includeWalletIds: walletId ? [walletId] : undefined });
+      // The WalletKit modal will handle pairing and the connected address will update via walletKitAddress.
     } catch (error) {
       console.error("Error opening WalletKit modal:", error);
-      showNotification("Failed to open wallet modal. Please try again.", "error");
+      showNotification("Failed to connect EVM wallet. Please try again.", "error");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 5. Once the user connects with an EVM wallet via WalletKit,
-  // we automatically check their backend account.
+  // Toggle to show the EVM submenu.
+  const openEvmWalletModal = () => {
+    setShowEvmModal(true);
+  };
+
+  // Once connected via WalletKit, automatically check the backend user account.
   useEffect(() => {
     if (walletKitAddress) {
-      // You may wish to add additional checks (e.g. network verification) here.
       checkUserAccount(walletKitAddress);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [walletKitAddress]);
 
-  // 6. Backend account check (same for both Kasware and WalletKit connections)
+  // Backend account check (same for both Kasware and WalletKit)
   const checkUserAccount = async (address: string) => {
     try {
       const response = await fetch(`/api/user?walletAddress=${address}`);
@@ -130,7 +150,7 @@ export function WalletConnection() {
     }
   };
 
-  // 7. Network verification for Kasware (unchanged)
+  // Kasware network verification (unchanged)
   const checkNetwork = async () => {
     const kasware = (window as any).kasware;
     if (kasware) {
@@ -151,7 +171,7 @@ export function WalletConnection() {
     return false;
   };
 
-  // 8. Disconnect logic remains unchanged.
+  // Disconnect logic remains unchanged.
   const handleDisconnect = useCallback(
     debounce(async () => {
       setIsLoading(true);
@@ -213,11 +233,53 @@ export function WalletConnection() {
           </div>
           <div
             className="flex items-center cursor-pointer hover:bg-[#3A3A3A] p-2 rounded transition-all mt-2"
-            onClick={handleEvmWalletConnect}
+            onClick={openEvmWalletModal}
           >
             <img src="/walletconnectlogo.webp" alt="EVM Wallet (WalletKit)" className="w-8 h-8 mr-3" />
             <span>EVM Wallet (WalletKit)</span>
           </div>
+          {showEvmModal && (
+            <div className="mt-2">
+              <h3 className="text-md font-semibold mb-2">Select EVM Wallet</h3>
+              <div className="flex flex-col space-y-2">
+                <button
+                  onClick={() => handleSelectEvmWallet("phantom")}
+                  className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
+                  disabled={isLoading}
+                >
+                  <img src="/phantom-logo.webp" alt="Phantom" className="w-8 h-8 mr-3" />
+                  <span>Phantom</span>
+                </button>
+                <button
+                  onClick={() => handleSelectEvmWallet("metamask")}
+                  className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
+                  disabled={isLoading}
+                >
+                  <img src="/metamask-logo.webp" alt="MetaMask" className="w-8 h-8 mr-3" />
+                  <span>MetaMask</span>
+                </button>
+                <button
+                  onClick={() => handleSelectEvmWallet("trust")}
+                  className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
+                  disabled={isLoading}
+                >
+                  <img src="/trustwallet-logo.webp" alt="Trust Wallet" className="w-8 h-8 mr-3" />
+                  <span>Trust Wallet</span>
+                </button>
+                <button
+                  onClick={() => handleSelectEvmWallet("uniswap")}
+                  className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
+                  disabled={isLoading}
+                >
+                  <img src="/uniswap-logo.webp" alt="Uniswap Wallet" className="w-8 h-8 mr-3" />
+                  <span>Uniswap Wallet</span>
+                </button>
+              </div>
+              <button onClick={() => setShowEvmModal(false)} className="mt-2 text-red-400 hover:underline">
+                Cancel
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
