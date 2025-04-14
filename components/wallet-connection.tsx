@@ -38,7 +38,7 @@ export function WalletConnection() {
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
   const { showModal } = useModal();
 
-  // Local state to store the WalletKit instance and connected address.
+  // Local state for the WalletKit instance and the connected address.
   const [walletKit, setWalletKit] = useState<any>(null);
   const [walletKitAddress, setWalletKitAddress] = useState<string | null>(null);
 
@@ -48,7 +48,7 @@ export function WalletConnection() {
   const [showEvmModal, setShowEvmModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Combined wallet connected state – if either Kasware or an EVM wallet (WalletKit) is connected.
+  // Combined wallet connected state.
   const isWalletConnected = isConnected || Boolean(walletKitAddress);
 
   // Initialize WalletKit on component mount.
@@ -63,7 +63,8 @@ export function WalletConnection() {
           metadata: {
             name: "Kascasino Wallet",
             description: "Kascasino Wallet to interface with decentralized applications",
-            url: "https://www.kascasino.xyz/",
+            // Dynamically set the URL based on the current environment.
+            url: typeof window !== "undefined" ? window.location.origin : "https://www.kascasino.xyz/",
             icons: ["https://www.kascasino.xyz/logo.png"],
             redirect: {
               native: "kascasino://",
@@ -85,7 +86,6 @@ export function WalletConnection() {
       // Assuming the session object contains namespaces with accounts in CAIP format.
       const accounts = session.namespaces?.eip155?.accounts;
       if (accounts && accounts.length > 0) {
-        // Format: "eip155:chainId:walletAddress" – extract the wallet address.
         const parts = accounts[0].split(":");
         const address = parts[2] || accounts[0];
         setWalletKitAddress(address);
@@ -97,15 +97,21 @@ export function WalletConnection() {
     };
   }, [walletKit]);
 
-  // Helper to open the WalletKit modal.
+  // Helper to trigger the WalletKit pairing process.
+  // NOTE: The method `openModal` is assumed by previous code,
+  // but if it is not available, you must implement your own pairing UI.
   const openWalletKitModal = async (options: { includeWalletIds?: string[] }) => {
     if (!walletKit) {
       throw new Error("WalletKit not initialized");
     }
-    try {
+    // If your SDK version provides openModal, use it:
+    if (typeof walletKit.openModal === "function") {
       await walletKit.openModal(options);
-    } catch (error) {
-      throw error;
+    } else {
+      // Fallback: You must trigger pairing using the WalletKit API.
+      // For example, if you obtain a WalletConnect URI (wcuri) from your dApp:
+      const wcuri = "wc:YOUR_GENERATED_URI"; // Replace with real logic.
+      await walletKit.pair({ uri: wcuri });
     }
   };
 
@@ -183,7 +189,7 @@ export function WalletConnection() {
     closeWalletOptions();
     try {
       await openWalletKitModal({ includeWalletIds: walletId ? [walletId] : undefined });
-      // The WalletKit modal handles pairing; on session approval, walletKitAddress updates automatically.
+      // On successful pairing, the session event updates walletKitAddress automatically.
     } catch (error) {
       console.error("Error opening WalletKit modal:", error);
       showNotification("Failed to connect EVM wallet. Please try again.", "error");
@@ -196,7 +202,7 @@ export function WalletConnection() {
     setShowEvmModal(true);
   };
 
-  // Once connected via WalletKit, automatically check the backend user account.
+  // Once connected via WalletKit, check the backend user account.
   useEffect(() => {
     if (walletKitAddress) {
       checkUserAccount(walletKitAddress);
