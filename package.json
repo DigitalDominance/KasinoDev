@@ -15,6 +15,7 @@
     "npm": "10.x"
   },
   "dependencies": {
+    "@reown/appkit-adapter-ethereum": "^1.7.2",
     "@walletconnect/ethereum-provider": "2.19.2",
     "axios": "^1.4.0",
     "react-native-web": "^0.18.12",
