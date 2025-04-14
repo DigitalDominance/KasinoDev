@@ -1,20 +1,19 @@
 "use client";
 
-import "@walletconnect/react-native-compat"; // Must be imported before any @reown/* dependencies
 import { useState, useCallback, useRef, useEffect } from "react";
+import { debounce } from "underscore";
+import { Core } from "@walletconnect/core";
+import { WalletKit } from "@reown/walletkit";
+import { buildApprovedNamespaces, getSdkError } from "@walletconnect/utils";
+import { defineChain } from "@reown/appkit/networks";
+
 import { useWallet, WalletStatus } from "@/contexts/WalletContext";
 import { useModal } from "@/contexts/ModalContext";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
-import { debounce } from "underscore";
-import { siweConfig } from "./siweConfig";
-import { defineChain } from "@reown/appkit/networks";
 
-import { Core } from "@walletconnect/core";
-import { WalletKit } from "@reown/walletkit";
-
-// 1. Define the Kasplex Testnet chain (chain ID 12211)
+// 1. Define the Kasplex Testnet chain (chain ID 12211) – this remains unchanged.
 const kasplexTestnet = defineChain({
   id: 12211,
   caipNetworkId: "eip155:12211",
@@ -38,7 +37,7 @@ export function WalletConnection() {
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
   const { showModal } = useModal();
 
-  // Local state for the WalletKit instance and the connected address.
+  // Local state for the WalletKit instance and the connected EVM wallet address.
   const [walletKit, setWalletKit] = useState<any>(null);
   const [walletKitAddress, setWalletKitAddress] = useState<string | null>(null);
 
@@ -48,10 +47,10 @@ export function WalletConnection() {
   const [showEvmModal, setShowEvmModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Combined wallet connected state.
+  // Combined connection state (either Kasware or EVM wallet).
   const isWalletConnected = isConnected || Boolean(walletKitAddress);
 
-  // Initialize WalletKit on component mount.
+  // Initialize WalletKit on component mount using the project ID from NEXT_PUBLIC_PROJECT_ID.
   useEffect(() => {
     async function initWalletKit() {
       try {
@@ -63,12 +62,10 @@ export function WalletConnection() {
           metadata: {
             name: "Kascasino Wallet",
             description: "Kascasino Wallet to interface with decentralized applications",
-            // Dynamically set the URL based on the current environment.
+            // Set dynamically based on current environment.
             url: typeof window !== "undefined" ? window.location.origin : "https://www.kascasino.xyz/",
             icons: ["https://www.kascasino.xyz/logo.png"],
-            redirect: {
-              native: "kascasino://",
-            },
+            redirect: { native: "kascasino://" },
           },
         });
         setWalletKit(instance);
@@ -79,43 +76,77 @@ export function WalletConnection() {
     initWalletKit();
   }, []);
 
-  // Subscribe to session approval events to capture the connected EVM wallet address.
+  // Listen for the WalletKit session proposal event. When a session proposal is received,
+  // the approvedNamespaces are built (using our chain, methods, and events) and the session is approved.
+  // On approval, the account from the approved session is used to update walletKitAddress.
   useEffect(() => {
     if (!walletKit) return;
-    const onSessionApproved = (session: any) => {
-      // Assuming the session object contains namespaces with accounts in CAIP format.
-      const accounts = session.namespaces?.eip155?.accounts;
-      if (accounts && accounts.length > 0) {
-        const parts = accounts[0].split(":");
-        const address = parts[2] || accounts[0];
-        setWalletKitAddress(address);
+    const onSessionProposal = async (proposal: any) => {
+      try {
+        // Build approved namespaces using our chain details.
+        const approvedNamespaces = buildApprovedNamespaces({
+          proposal: proposal.params,
+          supportedNamespaces: {
+            eip155: {
+              chains: ["eip155:12211"],
+              methods: [
+                "eth_sendTransaction",
+                "personal_sign",
+                "eth_sign",
+                "eth_signTypedData",
+                "eth_signTransaction",
+                "wallet_switchEthereumChain",
+                "wallet_addEthereumChain"
+              ],
+              events: ["chainChanged", "accountsChanged"],
+              // If the wallet already has an address from previous use, include it.
+              accounts: walletKitAddress ? [`eip155:12211:${walletKitAddress}`] : [],
+            },
+          },
+        });
+
+        // Approve the session using the built namespaces.
+        const session = await walletKit.approveSession({
+          id: proposal.id,
+          namespaces: approvedNamespaces,
+        });
+
+        // Extract the wallet address from the approved session and save it.
+        if (session.namespaces && session.namespaces.eip155?.accounts.length > 0) {
+          const parts = session.namespaces.eip155.accounts[0].split(":");
+          setWalletKitAddress(parts[2]);
+        }
+      } catch (error) {
+        console.error("Session proposal error", error);
+        await walletKit.rejectSession({
+          id: proposal.id,
+          reason: getSdkError("USER_REJECTED"),
+        });
       }
     };
-    walletKit.on("session_approved", onSessionApproved);
+
+    walletKit.on("session_proposal", onSessionProposal);
     return () => {
-      walletKit.off("session_approved", onSessionApproved);
+      walletKit.off("session_proposal", onSessionProposal);
     };
-  }, [walletKit]);
+  }, [walletKit, walletKitAddress]);
 
   // Helper to trigger the WalletKit pairing process.
-  // NOTE: The method `openModal` is assumed by previous code,
-  // but if it is not available, you must implement your own pairing UI.
+  // If the SDK provides an openModal method, it is used; otherwise, fallback to a pairing call.
   const openWalletKitModal = async (options: { includeWalletIds?: string[] }) => {
     if (!walletKit) {
       throw new Error("WalletKit not initialized");
     }
-    // If your SDK version provides openModal, use it:
     if (typeof walletKit.openModal === "function") {
       await walletKit.openModal(options);
     } else {
-      // Fallback: You must trigger pairing using the WalletKit API.
-      // For example, if you obtain a WalletConnect URI (wcuri) from your dApp:
-      const wcuri = "wc:YOUR_GENERATED_URI"; // Replace with real logic.
+      // Fallback: replace this with your own logic to retrieve a valid WalletConnect URI.
+      const wcuri = "wc:YOUR_GENERATED_URI";
       await walletKit.pair({ uri: wcuri });
     }
   };
 
-  // Disconnect for WalletKit.
+  // Disconnect the EVM WalletKit session.
   const disconnectWalletKit = async () => {
     if (walletKit) {
       try {
@@ -147,7 +178,8 @@ export function WalletConnection() {
     setShowEvmModal(false);
   };
 
-  // Kasware connection logic.
+  // ----------------------------
+  // Kasware Connection Logic (unchanged)
   const handleKaswareConnect = async () => {
     setIsLoading(true);
     closeWalletOptions();
@@ -166,8 +198,12 @@ export function WalletConnection() {
     }
   };
 
-  // EVM wallet connection via WalletKit.
-  const handleSelectEvmWallet = async (walletType: "metamask" | "phantom" | "trust" | "uniswap") => {
+  // ----------------------------
+  // EVM Wallet Connection via WalletKit (web standard)
+  // Map the walletType to a specific walletId so that only the desired wallet apps show up.
+  const handleSelectEvmWallet = async (
+    walletType: "metamask" | "phantom" | "trust" | "uniswap"
+  ) => {
     let walletId: string | undefined;
     switch (walletType) {
       case "metamask":
@@ -189,7 +225,7 @@ export function WalletConnection() {
     closeWalletOptions();
     try {
       await openWalletKitModal({ includeWalletIds: walletId ? [walletId] : undefined });
-      // On successful pairing, the session event updates walletKitAddress automatically.
+      // When the pairing is successful, the session proposal handler will update walletKitAddress.
     } catch (error) {
       console.error("Error opening WalletKit modal:", error);
       showNotification("Failed to connect EVM wallet. Please try again.", "error");
@@ -198,9 +234,7 @@ export function WalletConnection() {
     }
   };
 
-  const openEvmWalletModal = () => {
-    setShowEvmModal(true);
-  };
+  const openEvmWalletModal = () => setShowEvmModal(true);
 
   // Once connected via WalletKit, check the backend user account.
   useEffect(() => {
@@ -209,7 +243,7 @@ export function WalletConnection() {
     }
   }, [walletKitAddress]);
 
-  // Backend account check.
+  // Backend account verification.
   const checkUserAccount = async (address: string) => {
     try {
       const response = await fetch(`/api/user?walletAddress=${address}`);
@@ -250,7 +284,7 @@ export function WalletConnection() {
     return false;
   };
 
-  // Disconnect logic for both Kasware and WalletKit.
+  // Combined disconnect logic for both Kasware and WalletKit sessions.
   const handleDisconnect = useCallback(
     debounce(async () => {
       setIsLoading(true);
@@ -302,6 +336,7 @@ export function WalletConnection() {
           </Button>
         </motion.div>
       )}
+
       {showOptions && (
         <div
           ref={dropdownRef}
