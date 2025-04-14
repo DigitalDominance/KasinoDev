@@ -8,8 +8,8 @@ import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import { debounce } from "underscore";
 import { siweConfig } from "./siweConfig";
-import { EthereumProvider } from "@walletconnect/ethereum-provider";
-import { AppKit } from "@reown/appkit";
+import { createAppKit } from "@reown/appkit/react";
+import { createEthereumAdapter } from "@reown/appkit-adapter-ethereum";
 
 export function WalletConnection() {
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
@@ -24,15 +24,9 @@ export function WalletConnection() {
   useEffect(() => {
     const initReownAppKit = async () => {
       try {
-        // Create a new instance of AppKit with the correct configuration
-        const appKit = new AppKit({
+        // Create Ethereum adapter
+        const ethereumAdapter = createEthereumAdapter({
           projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
-          metadata: {
-            name: "KasCasino Wallet",
-            description: "Wallet for KasCasino",
-            url: "https://kasino-dev-38d41436adab.herokuapp.com",
-            icons: ["https://your_wallet_icon.png"],
-          },
           chains: [{
             id: 12211,
             name: "Kasplex Testnet",
@@ -52,14 +46,27 @@ export function WalletConnection() {
             {id: "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0"},
             // Uniswap Wallet
             {id: "c03dfee351b6fcc421b4494ea33b9d4b92a984f87aa76d1663bb28705e95034a"}
-          ],
+          ]
+        });
+
+        // Create AppKit with the adapter
+        const appKit = createAppKit({
+          projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
+          adapters: [ethereumAdapter],
+          metadata: {
+            name: "KasCasino Wallet",
+            description: "Wallet for KasCasino",
+            url: "https://kasino-dev-38d41436adab.herokuapp.com",
+            icons: ["https://your_wallet_icon.png"],
+          },
+          themeMode: 'dark',
+          themeVariables: {
+            '--w3m-accent': '#49EACB',
+          }
         });
         
-        // Initialize the AppKit
-        await appKit.initialize();
-        
         // Get the Ethereum provider
-        const provider = await appKit.getEthereumProvider();
+        const provider = await ethereumAdapter.getProvider();
         setWcProvider(provider);
       } catch (error) {
         console.error("Failed to initialize Reown AppKit:", error);
@@ -320,6 +327,9 @@ export function WalletConnection() {
           </button>
         </div>
       )}
+      
+      {/* Add the AppKit button component */}
+      <appkit-button />
     </div>
   );
 }
