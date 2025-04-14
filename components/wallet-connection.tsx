@@ -9,7 +9,7 @@ import { Loader2 } from "lucide-react";
 import { debounce } from "underscore";
 import { siweConfig } from "./siweConfig";
 import { createAppKit } from "@reown/appkit/react";
-import { createEthereumAdapter } from "@reown/appkit-adapter-ethereum";
+import { createEthereumAdapter } from "@reown/appkit-adapter-ethers";
 
 export function WalletConnection() {
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
