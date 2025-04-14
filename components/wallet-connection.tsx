@@ -7,44 +7,83 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import { debounce } from "underscore";
-import { siweConfig } from "./siweConfig";
-import { EthereumProvider } from "@walletconnect/ethereum-provider";
+import { createAppKit } from "@walletconnect/appkit";
+import { mainnet } from "@wagmi/core/chains";
+import * as Clipboard from "expo-clipboard";
 
-// Helper to choose the injected provider based solely on the clicked wallet type.
-// It first checks if multiple providers exist via window.ethereum.providers.
-// If not, it will check the single provider to see if its flag matches the walletType.
-const getInjectedProvider = (walletType) => {
-  if (typeof window === "undefined" || !window.ethereum) return null;
-  const eth = window.ethereum;
-
-  if (eth.providers && Array.isArray(eth.providers)) {
-    if (walletType === "metamask") {
-      return eth.providers.find((p) => p.isMetaMask) || null;
-    } else if (walletType === "phantom") {
-      return eth.providers.find((p) => p.isPhantom) || null;
-    } else if (walletType === "trust") {
-      return eth.providers.find((p) => p.isTrust) || null;
-    } else if (walletType === "uniswap") {
-      return eth.providers.find((p) => p.isUniswap) || null;
-    }
-  } else {
-    // Only one provider exists—check if it explicitly indicates the desired wallet.
-    if (walletType === "metamask" && eth.isMetaMask) {
-      return eth;
-    }
-    if (walletType === "phantom" && eth.isPhantom) {
-      return eth;
-    }
-    if (walletType === "trust" && eth.isTrust) {
-      return eth;
-    }
-    if (walletType === "uniswap" && eth.isUniswap) {
-      return eth;
-    }
-    // No match found.
-    return null;
-  }
-};
+// Create WalletConnect AppKit instance with your desired configuration
+const evmWalletConnect = createAppKit({
+  projectId: "YOUR_PROJECT_ID", // Replace with your actual WalletConnect project id
+  chains: [mainnet],
+  defaultChain: mainnet,
+  clipboardClient: {
+    setString: async (value) => {
+      await Clipboard.setStringAsync(value);
+    },
+  },
+  customWallets: [
+    {
+      id: "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393", // Phantom
+      name: "Phantom",
+      homepage: "https://www.phantom.app",
+      mobile_link: "", // Optionally provide a deeplink or universal link
+      link_mode: "universal_link",
+      desktop_link: "",
+      webapp_link: "",
+      app_store: "",
+      play_store: "",
+    },
+    {
+      id: "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96", // MetaMask
+      name: "MetaMask",
+      homepage: "https://metamask.io",
+      mobile_link: "",
+      link_mode: "universal_link",
+      desktop_link: "",
+      webapp_link: "",
+      app_store: "",
+      play_store: "",
+    },
+    {
+      id: "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0", // Trust Wallet
+      name: "Trust Wallet",
+      homepage: "https://trustwallet.com",
+      mobile_link: "",
+      link_mode: "universal_link",
+      desktop_link: "",
+      webapp_link: "",
+      app_store: "",
+      play_store: "",
+    },
+    {
+      id: "c03dfee351b6fcc421b4494ea33b9d4b92a984f87aa76d1663bb28705e95034a", // Uniswap Wallet
+      name: "Uniswap Wallet",
+      homepage: "https://uniswap.org",
+      mobile_link: "",
+      link_mode: "universal_link",
+      desktop_link: "",
+      webapp_link: "",
+      app_store: "",
+      play_store: "",
+    },
+  ],
+  debug: true,
+  features: {
+    swaps: true,
+    email: true,
+    socials: ["x", "discord", "apple"],
+    emailShowWallets: false,
+  },
+  enableAnalytics: true,
+  chainImages: {
+    1: "https://my.images.com/eth.png",
+  },
+  connectorImages: {
+    coinbaseWallet: "https://images.mydapp.com/coinbase.png",
+    walletConnect: "https://images.mydapp.com/walletconnect.png",
+    appKitAuth: "https://images.mydapp.com/auth.png",
+  },
+});
 
 export function WalletConnection() {
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
@@ -52,11 +91,9 @@ export function WalletConnection() {
   const [isLoading, setIsLoading] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [showEvmModal, setShowEvmModal] = useState(false);
-  // Track the selected EVM wallet type.
-  const [selectedEvmWalletType, setSelectedEvmWalletType] = useState(null);
   const dropdownRef = useRef(null);
 
-  // Close dropdown if clicking outside.
+  // Close dropdown when clicking outside.
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -92,44 +129,24 @@ export function WalletConnection() {
     }
   };
 
-  // EVM connection handler using the explicitly requested injected provider.
-  const handleSelectEvmWallet = async (walletType) => {
+  // EVM connection handler using WalletConnect AppKit.
+  // The walletId parameter corresponds to the IDs provided in the AppKit configuration.
+  const handleSelectEvmWallet = async (walletId) => {
     setIsLoading(true);
     closeEvmWalletModal();
 
-    // Disconnect any previously selected wallet if switching types.
-    if (selectedEvmWalletType && selectedEvmWalletType !== walletType) {
-      await disconnectWallet();
-      setSelectedEvmWalletType(null);
-    }
-    setSelectedEvmWalletType(walletType);
-
     try {
-      const provider = getInjectedProvider(walletType);
-      if (!provider) {
-        let errorMsg = "";
-        if (walletType === "metamask") {
-          errorMsg = "MetaMask provider not found on this device. Please install the MetaMask extension or app.";
-        } else if (walletType === "phantom") {
-          errorMsg = "Phantom provider not found on this device. Please install the Phantom extension or app.";
-        } else if (walletType === "trust") {
-          errorMsg = "Trust Wallet provider not found on this device. Please install the Trust Wallet extension or app.";
-        } else if (walletType === "uniswap") {
-          errorMsg = "Uniswap Wallet provider not found on this device. Please install the Uniswap Wallet extension or app.";
-        }
-        showNotification(errorMsg, "error");
-        setIsLoading(false);
-        return;
-      }
-      
-      const accounts = await provider.request({ method: "eth_requestAccounts" });
-      if (accounts && accounts.length > 0) {
-        const address = accounts[0];
+      // Initiate the connection using the WalletConnect AppKit instance
+      const result = await evmWalletConnect.connect({ walletId });
+      if (result && result.accounts && result.accounts.length > 0) {
+        const address = result.accounts[0];
         await checkUserAccount(address);
+      } else {
+        showNotification("No account found. Please try again.", "error");
       }
     } catch (error) {
-      console.error("Error using injected provider for EVM wallet connection:", error);
-      showNotification("Failed to connect EVM wallet. Please try again.", "error");
+      console.error("Error connecting via WalletConnect AppKit:", error);
+      showNotification("Failed to connect wallet via WalletConnect. Please try again.", "error");
     } finally {
       setIsLoading(false);
     }
@@ -182,7 +199,6 @@ export function WalletConnection() {
       setIsLoading(true);
       try {
         await disconnectWallet();
-        setSelectedEvmWalletType(null);
       } catch (error) {
         showNotification("Failed to disconnect wallet. Please try again.", "error");
       } finally {
@@ -245,28 +261,36 @@ export function WalletConnection() {
           <h2 className="text-lg font-semibold mb-3">Select EVM Wallet</h2>
           <div className="flex flex-col space-y-3">
             <button
-              onClick={() => handleSelectEvmWallet("phantom")}
+              onClick={() =>
+                handleSelectEvmWallet("a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393")
+              }
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
             >
               <img src="/phantom-logo.webp" alt="Phantom" className="w-8 h-8 mr-3" />
               <span>Phantom</span>
             </button>
             <button
-              onClick={() => handleSelectEvmWallet("metamask")}
+              onClick={() =>
+                handleSelectEvmWallet("c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96")
+              }
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
             >
               <img src="/metamask-logo.webp" alt="MetaMask" className="w-8 h-8 mr-3" />
               <span>MetaMask</span>
             </button>
             <button
-              onClick={() => handleSelectEvmWallet("trust")}
+              onClick={() =>
+                handleSelectEvmWallet("4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0")
+              }
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
             >
               <img src="/trustwallet-logo.webp" alt="Trust Wallet" className="w-8 h-8 mr-3" />
               <span>Trust Wallet</span>
             </button>
             <button
-              onClick={() => handleSelectEvmWallet("uniswap")}
+              onClick={() =>
+                handleSelectEvmWallet("c03dfee351b6fcc421b4494ea33b9d4b92a984f87aa76d1663bb28705e95034a")
+              }
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
             >
               <img src="/uniswap-logo.webp" alt="Uniswap Wallet" className="w-8 h-8 mr-3" />
