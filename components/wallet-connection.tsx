@@ -10,39 +10,27 @@ import { debounce } from "underscore";
 import { siweConfig } from "./siweConfig";
 import { EthereumProvider } from "@walletconnect/ethereum-provider";
 
-// Helper to choose the injected provider based on the desired wallet type.
-// If multiple providers are injected (via window.ethereum.providers) then the one matching
-// the desired wallet type (e.g. metamask or phantom) is returned.
-// Otherwise, if only one provider is available, we check if it matches the desired type.
+// Helper to choose the injected provider based solely on the clicked wallet type.
+// NOTE: This function will only return a provider if there is an explicit match in window.ethereum.providers.
+// It does not use window.ethereum as a fallback.
 const getInjectedProvider = (walletType) => {
   if (typeof window === "undefined" || !window.ethereum) return null;
-
   const eth = window.ethereum;
-  let provider = null;
-  
-  // If multiple providers exist, choose the one matching the wallet type.
+
+  // Use the providers array if available.
   if (eth.providers && Array.isArray(eth.providers)) {
     if (walletType === "metamask") {
-      provider = eth.providers.find((p) => p.isMetaMask);
+      return eth.providers.find((p) => p.isMetaMask) || null;
     } else if (walletType === "phantom") {
-      provider = eth.providers.find((p) => p.isPhantom);
+      return eth.providers.find((p) => p.isPhantom) || null;
     } else if (walletType === "trust") {
-      provider = eth.providers.find((p) => p.isTrust);
+      return eth.providers.find((p) => p.isTrust) || null;
     } else if (walletType === "uniswap") {
-      provider = eth.providers.find((p) => p.isUniswap);
-    }
-  } else {
-    // Only one provider exists. Check that it matches the desired type.
-    if (
-      (walletType === "metamask" && eth.isMetaMask) ||
-      (walletType === "phantom" && eth.isPhantom) ||
-      (walletType === "trust" && eth.isTrust) ||
-      (walletType === "uniswap" && eth.isUniswap)
-    ) {
-      provider = eth;
+      return eth.providers.find((p) => p.isUniswap) || null;
     }
   }
-  return provider;
+  // No multiple providers available – do not fall back to a default provider.
+  return null;
 };
 
 export function WalletConnection() {
@@ -66,7 +54,7 @@ export function WalletConnection() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Toggles for options.
+  // Toggles for wallet options.
   const openWalletOptions = () => setShowOptions((prev) => !prev);
   const closeWalletOptions = () => setShowOptions(false);
   const openEvmWalletModal = () => setShowEvmModal(true);
@@ -96,7 +84,7 @@ export function WalletConnection() {
     setIsLoading(true);
     closeEvmWalletModal();
 
-    // If switching wallet types, disconnect any prior wallet.
+    // Disconnect any previously selected wallet if switching types.
     if (selectedEvmWalletType && selectedEvmWalletType !== walletType) {
       await disconnectWallet();
       setSelectedEvmWalletType(null);
@@ -106,10 +94,21 @@ export function WalletConnection() {
     try {
       const provider = getInjectedProvider(walletType);
       if (!provider) {
-        showNotification(`${walletType} provider not found.`, "error");
+        let errorMsg = "";
+        if (walletType === "metamask") {
+          errorMsg = "MetaMask provider not found on this device. Please install the MetaMask extension or app.";
+        } else if (walletType === "phantom") {
+          errorMsg = "Phantom provider not found on this device. Please install the Phantom extension or app.";
+        } else if (walletType === "trust") {
+          errorMsg = "Trust Wallet provider not found on this device. Please install the Trust Wallet extension or app.";
+        } else if (walletType === "uniswap") {
+          errorMsg = "Uniswap Wallet provider not found on this device. Please install the Uniswap Wallet extension or app.";
+        }
+        showNotification(errorMsg, "error");
         setIsLoading(false);
         return;
       }
+      
       const accounts = await provider.request({ method: "eth_requestAccounts" });
       if (accounts && accounts.length > 0) {
         const address = accounts[0];
@@ -190,7 +189,11 @@ export function WalletConnection() {
             disabled={isLoading}
             className="bg-gradient-to-r from-[#49EACB] to-[#49EACB]/80 hover:opacity-90 text-black font-semibold"
           >
-            {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Connect Wallet"}
+            {isLoading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              "Connect Wallet"
+            )}
           </Button>
         </motion.div>
       ) : (
@@ -200,7 +203,11 @@ export function WalletConnection() {
             disabled={isLoading}
             className="bg-gradient-to-r from-[#49EACB] to-[#49EACB]/80 hover:opacity-90 text-black font-semibold"
           >
-            {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Disconnect"}
+            {isLoading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              "Disconnect"
+            )}
           </Button>
         </motion.div>
       )}
