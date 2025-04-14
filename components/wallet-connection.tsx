@@ -7,101 +7,8 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import { debounce } from "underscore";
-import { createAppKit } from "@walletconnect/appkit";
-import * as Clipboard from "expo-clipboard";
-
-// Define custom chain for Kasplex Testnet
-const kasplexChain = {
-  id: 12211,
-  name: "Kasplex Testnet",
-  network: "kasplex",
-  nativeCurrency: {
-    decimals: 18,
-    name: "KAS",
-    symbol: "KAS",
-  },
-  rpcUrls: {
-    default: "https://www.kasplextest.xyz",
-  },
-  blockExplorers: {
-    default: { name: "Kasplex Explorer", url: "https://explorer.kasplextest.xyz" },
-  },
-  testnet: true,
-};
-
-// Create WalletConnect AppKit instance with your desired configuration
-const evmWalletConnect = createAppKit({
-  projectId: "YOUR_PROJECT_ID", // Replace with your actual WalletConnect project id
-  chains: [kasplexChain],
-  defaultChain: kasplexChain,
-  clipboardClient: {
-    setString: async (value) => {
-      await Clipboard.setStringAsync(value);
-    },
-  },
-  customWallets: [
-    {
-      id: "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393", // Phantom
-      name: "Phantom",
-      homepage: "https://www.phantom.app",
-      mobile_link: "", // Optionally provide a deeplink or universal link
-      link_mode: "universal_link",
-      desktop_link: "",
-      webapp_link: "",
-      app_store: "",
-      play_store: "",
-    },
-    {
-      id: "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96", // MetaMask
-      name: "MetaMask",
-      homepage: "https://metamask.io",
-      mobile_link: "",
-      link_mode: "universal_link",
-      desktop_link: "",
-      webapp_link: "",
-      app_store: "",
-      play_store: "",
-    },
-    {
-      id: "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0", // Trust Wallet
-      name: "Trust Wallet",
-      homepage: "https://trustwallet.com",
-      mobile_link: "",
-      link_mode: "universal_link",
-      desktop_link: "",
-      webapp_link: "",
-      app_store: "",
-      play_store: "",
-    },
-    {
-      id: "c03dfee351b6fcc421b4494ea33b9d4b92a984f87aa76d1663bb28705e95034a", // Uniswap Wallet
-      name: "Uniswap Wallet",
-      homepage: "https://uniswap.org",
-      mobile_link: "",
-      link_mode: "universal_link",
-      desktop_link: "",
-      webapp_link: "",
-      app_store: "",
-      play_store: "",
-    },
-  ],
-  debug: true,
-  features: {
-    swaps: true,
-    email: true,
-    socials: ["x", "discord", "apple"],
-    emailShowWallets: false,
-  },
-  enableAnalytics: true,
-  chainImages: {
-    12211: "https://yourdomain.com/your-kasplex-image.png", // Replace with your custom chain image if needed
-  },
-  connectorImages: {
-    coinbaseWallet: "https://images.mydapp.com/coinbase.png",
-    walletConnect: "https://images.mydapp.com/walletconnect.png",
-    appKitAuth: "https://images.mydapp.com/auth.png",
-  },
-});
+import { siweConfig } from "./siweConfig";
+import { EthereumProvider } from "@walletconnect/ethereum-provider";
 
 export function WalletConnection() {
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
@@ -111,7 +18,7 @@ export function WalletConnection() {
   const [showEvmModal, setShowEvmModal] = useState(false);
   const dropdownRef = useRef(null);
 
-  // Close dropdown when clicking outside.
+  // Close the main dropdown when clicking outside.
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -122,13 +29,25 @@ export function WalletConnection() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Toggles for wallet options.
-  const openWalletOptions = () => setShowOptions((prev) => !prev);
-  const closeWalletOptions = () => setShowOptions(false);
-  const openEvmWalletModal = () => setShowEvmModal(true);
-  const closeEvmWalletModal = () => setShowEvmModal(false);
+  // Toggle main dropdown.
+  const openWalletOptions = () => {
+    setShowOptions((prev) => !prev);
+  };
 
-  // Kasware connection remains unchanged.
+  const closeWalletOptions = () => {
+    setShowOptions(false);
+  };
+
+  // Toggle EVM wallet sub-dropdown.
+  const openEvmWalletModal = () => {
+    setShowEvmModal(true);
+  };
+
+  const closeEvmWalletModal = () => {
+    setShowEvmModal(false);
+  };
+
+  // Kasware connection logic (remains unchanged).
   const handleKaswareConnect = async () => {
     setIsLoading(true);
     closeWalletOptions();
@@ -147,24 +66,54 @@ export function WalletConnection() {
     }
   };
 
-  // EVM connection handler using WalletConnect AppKit.
-  // The walletId parameter corresponds to the IDs provided in the AppKit configuration.
-  const handleSelectEvmWallet = async (walletId) => {
+  // EVM wallet connection without QR modal (using injected provider in chrome extensions).
+  const handleSelectEvmWallet = async (walletType) => {
     setIsLoading(true);
     closeEvmWalletModal();
-
     try {
-      // Initiate the connection using the WalletConnect AppKit instance
-      const result = await evmWalletConnect.connect({ walletId });
-      if (result && result.accounts && result.accounts.length > 0) {
-        const address = result.accounts[0];
-        await checkUserAccount(address);
+      // Use injected provider (e.g., MetaMask, Phantom) if available.
+      if (window.ethereum) {
+        const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+        if (accounts && accounts.length > 0) {
+          const address = accounts[0];
+          await checkUserAccount(address);
+        }
       } else {
-        showNotification("No account found. Please try again.", "error");
+        // Fallback: Initialize WalletConnect's EthereumProvider.
+        const provider = await EthereumProvider.init({
+          projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
+          metadata: {
+            name: "KasCasino Wallet",
+            description: "Wallet for KasCasino",
+            url: "https://kasino-dev-38d41436adab.herokuapp.com/",
+            icons: ["https://your_wallet_icon.png"],
+          },
+          optionalChains: [12211],
+          rpcMap: {
+            12211: "https://www.kasplextest.xyz",
+          },
+        });
+
+        // Instead of showing a QR modal, if no injected provider exists,
+        // subscribe to the display_uri event and use deep linking.
+        provider.on("display_uri", (uri) => {
+          console.log("Deep link URI:", uri);
+          // Directly navigate to the URI to trigger connection in mobile browsers.
+          window.location.href = uri;
+        });
+
+        // Call connect() to establish a session.
+        const session = await provider.connect();
+        if (session && session.accounts && session.accounts.length > 0) {
+          const address = session.accounts[0];
+          await checkUserAccount(address);
+        } else {
+          throw new Error("No accounts returned from the session.");
+        }
       }
     } catch (error) {
-      console.error("Error connecting via WalletConnect AppKit:", error);
-      showNotification("Failed to connect wallet via WalletConnect. Please try again.", "error");
+      console.error("Error using WalletConnect for EVM wallet connection:", error);
+      showNotification("Failed to connect EVM wallet. Please try again.", "error");
     } finally {
       setIsLoading(false);
     }
@@ -250,7 +199,6 @@ export function WalletConnection() {
           </Button>
         </motion.div>
       )}
-
       {showOptions && (
         <div
           ref={dropdownRef}
@@ -273,42 +221,33 @@ export function WalletConnection() {
           </div>
         </div>
       )}
-
       {showEvmModal && (
         <div className="absolute top-full right-0 mt-2 w-64 z-50 bg-[#2F2F2F] text-white rounded-md shadow-lg p-4">
           <h2 className="text-lg font-semibold mb-3">Select EVM Wallet</h2>
           <div className="flex flex-col space-y-3">
             <button
-              onClick={() =>
-                handleSelectEvmWallet("a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393")
-              }
+              onClick={() => handleSelectEvmWallet("phantom")}
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
             >
               <img src="/phantom-logo.webp" alt="Phantom" className="w-8 h-8 mr-3" />
               <span>Phantom</span>
             </button>
             <button
-              onClick={() =>
-                handleSelectEvmWallet("c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96")
-              }
+              onClick={() => handleSelectEvmWallet("metamask")}
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
             >
               <img src="/metamask-logo.webp" alt="MetaMask" className="w-8 h-8 mr-3" />
               <span>MetaMask</span>
             </button>
             <button
-              onClick={() =>
-                handleSelectEvmWallet("4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0")
-              }
+              onClick={() => handleSelectEvmWallet("trust")}
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
             >
               <img src="/trustwallet-logo.webp" alt="Trust Wallet" className="w-8 h-8 mr-3" />
               <span>Trust Wallet</span>
             </button>
             <button
-              onClick={() =>
-                handleSelectEvmWallet("c03dfee351b6fcc421b4494ea33b9d4b92a984f87aa76d1663bb28705e95034a")
-              }
+              onClick={() => handleSelectEvmWallet("uniswap")}
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
             >
               <img src="/uniswap-logo.webp" alt="Uniswap Wallet" className="w-8 h-8 mr-3" />
