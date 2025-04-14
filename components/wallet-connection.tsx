@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 
-// 1. Define the Kasplex Testnet chain (chain ID 12211) – this remains unchanged.
+// 1. Define the Kasplex Testnet chain (chain ID 12211)
 const kasplexTestnet = defineChain({
   id: 12211,
   caipNetworkId: "eip155:12211",
@@ -99,7 +99,7 @@ export function WalletConnection() {
                 "wallet_addEthereumChain"
               ],
               events: ["chainChanged", "accountsChanged"],
-              // If the wallet already has an address from previous use, include it.
+              // Include the current wallet address if available.
               accounts: walletKitAddress ? [`eip155:12211:${walletKitAddress}`] : [],
             },
           },
@@ -111,7 +111,7 @@ export function WalletConnection() {
           namespaces: approvedNamespaces,
         });
 
-        // Extract the wallet address from the approved session and save it.
+        // Extract and store the wallet address from the approved session.
         if (session.namespaces && session.namespaces.eip155?.accounts.length > 0) {
           const parts = session.namespaces.eip155.accounts[0].split(":");
           setWalletKitAddress(parts[2]);
@@ -132,7 +132,7 @@ export function WalletConnection() {
   }, [walletKit, walletKitAddress]);
 
   // Helper to trigger the WalletKit pairing process.
-  // If the SDK provides an openModal method, it is used; otherwise, fallback to a pairing call.
+  // Now, we only use the openModal method. If it's not available, we throw an error instead of calling pair() with an invalid URI.
   const openWalletKitModal = async (options: { includeWalletIds?: string[] }) => {
     if (!walletKit) {
       throw new Error("WalletKit not initialized");
@@ -140,9 +140,8 @@ export function WalletConnection() {
     if (typeof walletKit.openModal === "function") {
       await walletKit.openModal(options);
     } else {
-      // Fallback: replace this with your own logic to retrieve a valid WalletConnect URI.
-      const wcuri = "wc:YOUR_GENERATED_URI";
-      await walletKit.pair({ uri: wcuri });
+      // Instead of a fallback with an invalid URI, throw an error to highlight that a valid pairing URI is required.
+      throw new Error("WalletKit openModal method unavailable. Cannot generate a valid pairing URI.");
     }
   };
 
