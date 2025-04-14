@@ -11,7 +11,7 @@ import { siweConfig } from "./siweConfig";
 import { defineChain } from "@reown/appkit/networks";
 
 // Import the WalletKit hook from Reown WalletKit.
-// Ensure that you have installed and configured WalletKit (and its polyfills) as per the docs.
+// Ensure you have installed & configured WalletKit (and any required polyfills)
 import { useWalletKit } from "@reown/walletkit/react";
 
 // 1. Define the Kasplex Testnet chain (chain ID 12211)
@@ -38,15 +38,19 @@ export function WalletConnection() {
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
   const { showModal } = useModal();
 
-  // WalletKit hook for EVM wallet connection via Reown WalletKit
-  const { openModal: openWalletKitModal, address: walletKitAddress } = useWalletKit();
+  // WalletKit hook for EVM wallet connection via Reown WalletKit.
+  // Note: We now also extract disconnect from the WalletKit hook.
+  const { openModal: openWalletKitModal, address: walletKitAddress, disconnect: disconnectWalletKit } = useWalletKit();
 
   const [isLoading, setIsLoading] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [showEvmModal, setShowEvmModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Auto-close the dropdown if clicking outside
+  // Combined wallet connected state – if either Kasware or WalletKit (EVM) is connected.
+  const isWalletConnected = isConnected || Boolean(walletKitAddress);
+
+  // Auto-close the dropdown if clicking outside.
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -84,7 +88,7 @@ export function WalletConnection() {
   };
 
   // EVM wallet connection via WalletKit.
-  // Here we show a submenu with the four wallets so the user can pick one.
+  // Show a submenu for the four supported wallets so the user can pick one.
   const handleSelectEvmWallet = async (walletType: "metamask" | "phantom" | "trust" | "uniswap") => {
     let walletId: string | undefined;
     switch (walletType) {
@@ -106,9 +110,9 @@ export function WalletConnection() {
     setIsLoading(true);
     closeWalletOptions();
     try {
-      // Here we call openWalletKitModal passing an option to include only the selected wallet ID.
+      // Call openWalletKitModal passing an option to include only the selected wallet ID.
       await openWalletKitModal({ includeWalletIds: walletId ? [walletId] : undefined });
-      // The WalletKit modal will handle pairing and the connected address will update via walletKitAddress.
+      // The WalletKit modal will handle pairing, and the connected address will update via walletKitAddress.
     } catch (error) {
       console.error("Error opening WalletKit modal:", error);
       showNotification("Failed to connect EVM wallet. Please try again.", "error");
@@ -130,7 +134,7 @@ export function WalletConnection() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [walletKitAddress]);
 
-  // Backend account check (same for both Kasware and WalletKit)
+  // Backend account check (same for both Kasware and WalletKit).
   const checkUserAccount = async (address: string) => {
     try {
       const response = await fetch(`/api/user?walletAddress=${address}`);
@@ -150,7 +154,7 @@ export function WalletConnection() {
     }
   };
 
-  // Kasware network verification (unchanged)
+  // Kasware network verification (unchanged).
   const checkNetwork = async () => {
     const kasware = (window as any).kasware;
     if (kasware) {
@@ -171,25 +175,30 @@ export function WalletConnection() {
     return false;
   };
 
-  // Disconnect logic remains unchanged.
+  // Disconnect logic for both Kasware and WalletKit.
   const handleDisconnect = useCallback(
     debounce(async () => {
       setIsLoading(true);
       try {
-        await disconnectWallet();
+        if (isConnected) {
+          await disconnectWallet();
+        }
+        if (walletKitAddress) {
+          await disconnectWalletKit();
+        }
       } catch (error) {
         showNotification("Failed to disconnect wallet. Please try again.", "error");
       } finally {
         setIsLoading(false);
       }
     }, 300),
-    [disconnectWallet, showNotification]
+    [disconnectWallet, disconnectWalletKit, isConnected, walletKitAddress, showNotification]
   );
 
   return (
     <div className="flex items-center space-x-4 relative">
       <WalletStatus />
-      {!isConnected ? (
+      {!isWalletConnected ? (
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
           <Button
             onClick={openWalletOptions}
