@@ -14,7 +14,7 @@ import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 
 // -----------------------------------------------------------------------
-// 1. Define your chain (Kasplex Testnet) as specified in your docs.
+// 1. Define your chain (Kasplex Testnet)
 const kasplexTestnet = defineChain({
   id: 12211,
   caipNetworkId: "eip155:12211",
@@ -34,27 +34,27 @@ const kasplexTestnet = defineChain({
 });
 
 // -----------------------------------------------------------------------
-// 2. React component for wallet connection integrating both Kasware (unchanged)
-// and WalletKit (using automatic pairing via URL parameter, no user input).
+// 2. React component for wallet connection (Kasware & WalletKit)
 export function WalletConnection() {
-  // Kasware integration (unchanged)
+  // Kasware wallet integration (unchanged)
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
   const { showModal } = useModal();
 
-  // Local state for WalletKit instance and connected EVM wallet address.
+  // State for WalletKit and connected EVM wallet address
   const [walletKit, setWalletKit] = useState<any>(null);
   const [walletKitAddress, setWalletKitAddress] = useState<string | null>(null);
 
-  // UI state for loading and dropdown modals.
+  // UI state for loading and dropdown modals
   const [isLoading, setIsLoading] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
   const [showEvmModal, setShowEvmModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Combined connection state: either Kasware or WalletKit (EVM) is connected.
+  // Combined connection state: either Kasware or WalletKit is connected.
   const isWalletConnected = isConnected || Boolean(walletKitAddress);
 
-  // Function to toggle the wallet options dropdown.
+  // ---------------------------------------------------------------------
+  // Helper functions to show or close the wallet options dropdown.
   const openWalletOptions = () => setShowOptions((prev) => !prev);
   const closeWalletOptions = () => {
     setShowOptions(false);
@@ -62,7 +62,7 @@ export function WalletConnection() {
   };
 
   // ---------------------------------------------------------------------
-  // Initialization: Create the Core instance and initialize WalletKit.
+  // Initialization: create a Core instance with your project ID and initialize WalletKit.
   useEffect(() => {
     async function initWalletKit() {
       try {
@@ -88,11 +88,12 @@ export function WalletConnection() {
   }, []);
 
   // ---------------------------------------------------------------------
-  // Automatic Pairing: Check URL for a pairing URI and trigger pairing automatically.
+  // Automatic Pairing: if a pairing URI is provided via the URL (query parameter "wc"),
+  // attempt to pair automatically.
   useEffect(() => {
     if (!walletKit) return;
     const searchParams = new URLSearchParams(window.location.search);
-    const pairingUri = searchParams.get("wc"); // Make sure the dapp provides this parameter.
+    const pairingUri = searchParams.get("wc");
     if (pairingUri) {
       (async () => {
         try {
@@ -107,7 +108,7 @@ export function WalletConnection() {
   }, [walletKit, showNotification]);
 
   // ---------------------------------------------------------------------
-  // Session Proposal Handling: Approve or reject session proposals.
+  // Session Proposal Handling: when a session proposal is received, build approved namespaces and approve.
   useEffect(() => {
     if (!walletKit) return;
     const onSessionProposal = async (proposal: any) => {
@@ -151,14 +152,12 @@ export function WalletConnection() {
     };
 
     walletKit.on("session_proposal", onSessionProposal);
-    return () => {
-      walletKit.off("session_proposal", onSessionProposal);
-    };
+    return () => walletKit.off("session_proposal", onSessionProposal);
   }, [walletKit, walletKitAddress]);
 
   // ---------------------------------------------------------------------
-  // EVM Wallet Connection via WalletKit:
-  // When the user selects an EVM wallet type, ensure the pairing URI is provided automatically.
+  // EVM Wallet Connection via WalletKit: when a user selects an EVM wallet,
+  // retrieve the pairing URI from the URL automatically and call pair().
   const handleSelectEvmWallet = async (
     walletType: "metamask" | "phantom" | "trust" | "uniswap"
   ) => {
@@ -185,10 +184,13 @@ export function WalletConnection() {
       const searchParams = new URLSearchParams(window.location.search);
       const pairingUri = searchParams.get("wc");
       if (!pairingUri) {
-        throw new Error("No pairing URI found in URL. Ensure the dapp provides one automatically.");
+        // Instead of throwing an error, show a notification so pairing can be re‑triggered by a proper dapp deep link.
+        showNotification("No pairing URI found. Ensure the dapp provides one automatically.", "error");
+        setIsLoading(false);
+        return;
       }
       await walletKit.pair({ uri: pairingUri, includeWalletIds: walletId ? [walletId] : undefined });
-      // When pairing succeeds, the session proposal event will update walletKitAddress.
+      // When pairing succeeds, session proposal events will update walletKitAddress.
     } catch (error) {
       console.error("Error during WalletKit pairing:", error);
       showNotification("Failed to connect EVM wallet. Please try again.", "error");
@@ -200,7 +202,7 @@ export function WalletConnection() {
   const openEvmWalletModal = () => setShowEvmModal(true);
 
   // ---------------------------------------------------------------------
-  // Kasware Connection Logic (unchanged):
+  // Kasware Connection Logic (unchanged)
   const handleKaswareConnect = async () => {
     setIsLoading(true);
     closeWalletOptions();
@@ -220,7 +222,7 @@ export function WalletConnection() {
   };
 
   // ---------------------------------------------------------------------
-  // Backend Account Verification:
+  // Backend Account Verification: once connected, verify the user's account.
   useEffect(() => {
     if (walletKitAddress) {
       checkUserAccount(walletKitAddress);
@@ -247,7 +249,7 @@ export function WalletConnection() {
   };
 
   // ---------------------------------------------------------------------
-  // Kasware Network Verification (unchanged):
+  // Kasware Network Verification (unchanged)
   const checkNetwork = async () => {
     const kasware = (window as any).kasware;
     if (kasware) {
@@ -269,7 +271,7 @@ export function WalletConnection() {
   };
 
   // ---------------------------------------------------------------------
-  // Disconnect Logic: For both Kasware and WalletKit sessions.
+  // Disconnect Logic: disconnect both Kasware and WalletKit sessions.
   const disconnectWalletKit = async () => {
     if (walletKit) {
       try {
@@ -303,7 +305,7 @@ export function WalletConnection() {
   );
 
   // ---------------------------------------------------------------------
-  // Render Component UI.
+  // Render Component UI
   return (
     <div className="flex items-center space-x-4 relative">
       <WalletStatus />
@@ -328,7 +330,7 @@ export function WalletConnection() {
           </Button>
         </motion.div>
       )}
-
+      
       {showOptions && (
         <div
           ref={dropdownRef}
@@ -339,7 +341,7 @@ export function WalletConnection() {
             <img src="/kaswarelogo.webp" alt="Kasware Wallet" className="w-8 h-8 mr-3" />
             <span>Kasware Wallet</span>
           </div>
-          <div className="flex items-center cursor-pointer hover:bg-[#3A3A3A] p-2 rounded transition-all mt-2" onClick={openEvmWalletModal}>
+          <div className="flex items-center cursor-pointer hover:bg-[#3A3A3A] p-2 rounded transition-all mt-2" onClick={() => setShowEvmModal(true)}>
             <img src="/walletconnectlogo.webp" alt="EVM Wallet (WalletKit)" className="w-8 h-8 mr-3" />
             <span>EVM Wallet (WalletKit)</span>
           </div>
