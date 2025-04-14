@@ -12,6 +12,18 @@ import { createAppKit } from "@reown/appkit/react";
 // Updated import: use EthersAdapter instead of createEthereumAdapter.
 import { EthersAdapter } from "@reown/appkit-adapter-ethers";
 
+// Define your chain/network object
+const kasplexTestnet = {
+  id: 12211,
+  name: "Kasplex Testnet",
+  rpcUrl: "https://www.kasplextest.xyz",
+  nativeCurrency: {
+    name: "KAS",
+    symbol: "KAS",
+    decimals: 18,
+  },
+};
+
 export function WalletConnection() {
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
   const { showModal } = useModal();
@@ -29,18 +41,7 @@ export function WalletConnection() {
         // Create Ethereum adapter with your RPC chain details and wallet IDs using EthersAdapter
         const ethereumAdapter = new EthersAdapter({
           projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
-          chains: [
-            {
-              id: 12211,
-              name: "Kasplex Testnet",
-              rpcUrl: "https://www.kasplextest.xyz",
-              nativeCurrency: {
-                name: "KAS",
-                symbol: "KAS",
-                decimals: 18,
-              },
-            },
-          ],
+          chains: [kasplexTestnet],
           wallets: [
             { id: "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393" }, // Phantom
             { id: "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96" }, // MetaMask
@@ -49,10 +50,12 @@ export function WalletConnection() {
           ]
         });
 
-        // Create AppKit with additional configuration options
+        // Create AppKit with additional configuration options.
+        // Notice that we include the chains array here.
         const appKit = createAppKit({
           projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
           adapters: [ethereumAdapter],
+          chains: [kasplexTestnet], // <- Added chains property so the library knows your networks.
           metadata: {
             name: "KasCasino Wallet",
             description: "Wallet for KasCasino",
@@ -63,16 +66,7 @@ export function WalletConnection() {
           themeVariables: {
             "--w3m-accent": "#49EACB",
           },
-          defaultChain: {
-            id: 12211,
-            name: "Kasplex Testnet",
-            rpcUrl: "https://www.kasplextest.xyz",
-            nativeCurrency: {
-              name: "KAS",
-              symbol: "KAS",
-              decimals: 18,
-            },
-          },
+          defaultChain: kasplexTestnet, // Optional: sets the initial connection chain.
           featuredWalletIds: [
             "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393", // Phantom
             "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96", // MetaMask
@@ -155,8 +149,7 @@ export function WalletConnection() {
     }
     try {
       setIsLoading(true);
-      // Open the built-in Reown AppKit modal so the user can choose one of the
-      // featured (or custom) EVM wallets. This replaces the custom EVM wallet modal.
+      // Open the built-in Reown AppKit modal for wallet selection.
       await appKitRef.current.openModal();
     } catch (error) {
       console.error("Error opening EVM wallet modal:", error);
@@ -273,7 +266,7 @@ export function WalletConnection() {
         </div>
       )}
 
-      {/* Render the AppKit button (this can serve as an alternate way to trigger the modal) */}
+      {/* Render the AppKit button (an alternate way to trigger the modal) */}
       <appkit-button />
     </div>
   );
