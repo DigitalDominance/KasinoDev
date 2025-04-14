@@ -9,12 +9,12 @@ import { Loader2 } from "lucide-react";
 import { debounce } from "underscore";
 import { siweConfig } from "./siweConfig";
 import { createAppKit } from "@reown/appkit/react";
-// Updated import: use EthersAdapter instead of createEthereumAdapter.
+// Use the updated EthersAdapter instead of createEthereumAdapter.
 import { EthersAdapter } from "@reown/appkit-adapter-ethers";
 
-// Define your chain/network object
+// Define your network object using the "chainId" key
 const kasplexTestnet = {
-  id: 12211,
+  chainId: 12211,
   name: "Kasplex Testnet",
   rpcUrl: "https://www.kasplextest.xyz",
   nativeCurrency: {
@@ -31,17 +31,17 @@ export function WalletConnection() {
   const [showOptions, setShowOptions] = useState(false);
   const dropdownRef = useRef(null);
   const [wcProvider, setWcProvider] = useState(null);
-  // Ref for storing the initialized AppKit instance
+  // Ref to store the initialized AppKit instance
   const appKitRef = useRef(null);
 
-  // Initialize Reown AppKit (with extra options to configure the wallet modal)
   useEffect(() => {
     const initReownAppKit = async () => {
       try {
-        // Create Ethereum adapter with your RPC chain details and wallet IDs using EthersAdapter
+        // Create the Ethereum adapter with your projectId, network (using "networks"),
+        // and wallet IDs.
         const ethereumAdapter = new EthersAdapter({
           projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
-          chains: [kasplexTestnet],
+          networks: [kasplexTestnet],
           wallets: [
             { id: "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393" }, // Phantom
             { id: "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96" }, // MetaMask
@@ -50,12 +50,11 @@ export function WalletConnection() {
           ]
         });
 
-        // Create AppKit with additional configuration options.
-        // Notice that we include the chains array here.
+        // Create the AppKit instance passing the networks property (instead of chains)
         const appKit = createAppKit({
           projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
           adapters: [ethereumAdapter],
-          chains: [kasplexTestnet], // <- Added chains property so the library knows your networks.
+          networks: [kasplexTestnet],
           metadata: {
             name: "KasCasino Wallet",
             description: "Wallet for KasCasino",
@@ -66,7 +65,7 @@ export function WalletConnection() {
           themeVariables: {
             "--w3m-accent": "#49EACB",
           },
-          defaultChain: kasplexTestnet, // Optional: sets the initial connection chain.
+          defaultChain: kasplexTestnet,
           featuredWalletIds: [
             "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393", // Phantom
             "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96", // MetaMask
@@ -76,8 +75,8 @@ export function WalletConnection() {
           debug: true,
           features: {
             swaps: true,
-            email: false,     // disable email login if not needed
-            socials: [],      // disable socials by passing an empty array
+            email: false,
+            socials: [],
             emailShowWallets: true,
           },
           connectorImages: {
@@ -87,10 +86,10 @@ export function WalletConnection() {
           },
         });
 
-        // Store the AppKit instance so its methods can be used later (e.g. to open the modal)
+        // Store the AppKit instance for later use (for opening the modal)
         appKitRef.current = appKit;
 
-        // Optionally get the underlying Ethereum provider (if needed for direct interactions)
+        // Optionally obtain the underlying provider
         const provider = await ethereumAdapter.getProvider();
         setWcProvider(provider);
       } catch (error) {
@@ -101,7 +100,7 @@ export function WalletConnection() {
     initReownAppKit();
   }, []);
 
-  // Close the main dropdown when clicking outside
+  // Close dropdown on outside click
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -112,16 +111,10 @@ export function WalletConnection() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Toggle main dropdown.
-  const openWalletOptions = () => {
-    setShowOptions((prev) => !prev);
-  };
+  const openWalletOptions = () => setShowOptions((prev) => !prev);
+  const closeWalletOptions = () => setShowOptions(false);
 
-  const closeWalletOptions = () => {
-    setShowOptions(false);
-  };
-
-  // Kasware connection logic (remains unchanged)
+  // Kasware connection logic (unchanged)
   const handleKaswareConnect = async () => {
     setIsLoading(true);
     closeWalletOptions();
@@ -140,7 +133,7 @@ export function WalletConnection() {
     }
   };
 
-  // EVM wallet connection using Reown AppKit modal
+  // Connect EVM wallet using Reown AppKit modal
   const handleEvmWalletConnect = async () => {
     closeWalletOptions();
     if (!appKitRef.current) {
@@ -149,7 +142,6 @@ export function WalletConnection() {
     }
     try {
       setIsLoading(true);
-      // Open the built-in Reown AppKit modal for wallet selection.
       await appKitRef.current.openModal();
     } catch (error) {
       console.error("Error opening EVM wallet modal:", error);
@@ -159,7 +151,7 @@ export function WalletConnection() {
     }
   };
 
-  // Check user account on backend.
+  // Check user account on backend
   const checkUserAccount = async (address) => {
     try {
       const response = await fetch(`/api/user?walletAddress=${address}`);
@@ -179,7 +171,7 @@ export function WalletConnection() {
     }
   };
 
-  // Check Kasware network.
+  // Verify Kasware network
   const checkNetwork = async () => {
     const kasware = window.kasware;
     if (kasware) {
@@ -200,12 +192,11 @@ export function WalletConnection() {
     return false;
   };
 
-  // Disconnect logic with debounce.
+  // Disconnect logic with debounce
   const handleDisconnect = useCallback(
     debounce(async () => {
       setIsLoading(true);
       try {
-        // If the WalletConnect provider was used and supports disconnect, call it.
         if (wcProvider && wcProvider.connected && wcProvider.disconnect) {
           await wcProvider.disconnect();
         }
@@ -224,49 +215,32 @@ export function WalletConnection() {
       <WalletStatus />
       {!isConnected ? (
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-          <Button
-            onClick={openWalletOptions}
-            disabled={isLoading}
-            className="bg-gradient-to-r from-[#49EACB] to-[#49EACB]/80 hover:opacity-90 text-black font-semibold"
-          >
+          <Button onClick={openWalletOptions} disabled={isLoading} className="bg-gradient-to-r from-[#49EACB] to-[#49EACB]/80 hover:opacity-90 text-black font-semibold">
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Connect Wallet"}
           </Button>
         </motion.div>
       ) : (
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-          <Button
-            onClick={handleDisconnect}
-            disabled={isLoading}
-            className="bg-gradient-to-r from-[#49EACB] to-[#49EACB]/80 hover:opacity-90 text-black font-semibold"
-          >
+          <Button onClick={handleDisconnect} disabled={isLoading} className="bg-gradient-to-r from-[#49EACB] to-[#49EACB]/80 hover:opacity-90 text-black font-semibold">
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Disconnect"}
           </Button>
         </motion.div>
       )}
       {showOptions && (
-        <div
-          ref={dropdownRef}
-          className="absolute top-full right-0 mt-2 w-64 z-50 bg-[#2F2F2F] text-white rounded-md shadow-lg p-4"
-        >
+        <div ref={dropdownRef} className="absolute top-full right-0 mt-2 w-64 z-50 bg-[#2F2F2F] text-white rounded-md shadow-lg p-4">
           <h2 className="text-lg font-semibold mb-3">Choose Wallet Type</h2>
-          <div
-            className="flex items-center cursor-pointer hover:bg-[#3A3A3A] p-2 rounded transition-all"
-            onClick={handleKaswareConnect}
-          >
+          <div className="flex items-center cursor-pointer hover:bg-[#3A3A3A] p-2 rounded transition-all" onClick={handleKaswareConnect}>
             <img src="/kaswarelogo.webp" alt="Kasware Wallet" className="w-8 h-8 mr-3" />
             <span>Kasware Wallet</span>
           </div>
-          <div
-            className="flex items-center cursor-pointer hover:bg-[#3A3A3A] p-2 rounded transition-all mt-2"
-            onClick={handleEvmWalletConnect}
-          >
+          <div className="flex items-center cursor-pointer hover:bg-[#3A3A3A] p-2 rounded transition-all mt-2" onClick={handleEvmWalletConnect}>
             <img src="/walletconnectlogo.webp" alt="EVM Wallet (WalletConnect)" className="w-8 h-8 mr-3" />
             <span>EVM Wallet (WalletConnect)</span>
           </div>
         </div>
       )}
 
-      {/* Render the AppKit button (an alternate way to trigger the modal) */}
+      {/* Render the AppKit button as an alternate modal trigger */}
       <appkit-button />
     </div>
   );
