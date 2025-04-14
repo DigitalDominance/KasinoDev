@@ -29,7 +29,7 @@ export function WalletConnection() {
           metadata: {
             name: "KasCasino Wallet",
             description: "Wallet for KasCasino",
-            url: "https://kasino-dev-38d41436adab.herokuapp.com/",
+            url: "https://kasino-dev-38d41436adab.herokuapp.com",
             icons: ["https://your_wallet_icon.png"],
           },
           defaultChain: {
