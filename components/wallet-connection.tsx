@@ -9,7 +9,8 @@ import { Loader2 } from "lucide-react";
 import { debounce } from "underscore";
 import { siweConfig } from "./siweConfig";
 import { createAppKit } from "@reown/appkit/react";
-import { createEthereumAdapter } from "@reown/appkit-adapter-ethers";
+// Updated import: use EthersAdapter instead of createEthereumAdapter.
+import { EthersAdapter } from "@reown/appkit-adapter-ethers";
 
 export function WalletConnection() {
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
@@ -25,8 +26,8 @@ export function WalletConnection() {
   useEffect(() => {
     const initReownAppKit = async () => {
       try {
-        // Create Ethereum adapter with your RPC chain details and wallet IDs
-        const ethereumAdapter = createEthereumAdapter({
+        // Create Ethereum adapter with your RPC chain details and wallet IDs using EthersAdapter
+        const ethereumAdapter = new EthersAdapter({
           projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
           chains: [
             {
@@ -41,18 +42,14 @@ export function WalletConnection() {
             },
           ],
           wallets: [
-            { id: "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393" }, // Phantom (if applicable)
+            { id: "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393" }, // Phantom
             { id: "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96" }, // MetaMask
             { id: "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0" }, // Trust Wallet
             { id: "c03dfee351b6fcc421b4494ea33b9d4b92a984f87aa76d1663bb28705e95034a" }  // Uniswap
           ]
         });
 
-        // Create AppKit with additional configuration options including:
-        // - defaultChain (your Kasplex testnet)
-        // - featuredWalletIds (to prioritize the four wallets in the modal)
-        // - debug mode and extra feature toggles
-        // - connectorImages to override default images
+        // Create AppKit with additional configuration options
         const appKit = createAppKit({
           projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
           adapters: [ethereumAdapter],
@@ -96,7 +93,7 @@ export function WalletConnection() {
           },
         });
 
-        // Store the appKit instance so its methods can be used later (e.g. to open the modal)
+        // Store the AppKit instance so its methods can be used later (e.g. to open the modal)
         appKitRef.current = appKit;
 
         // Optionally get the underlying Ethereum provider (if needed for direct interactions)
