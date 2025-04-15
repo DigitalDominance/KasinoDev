@@ -10,22 +10,6 @@ import { debounce } from "underscore";
 import { siweConfig } from "./siweConfig";
 import { EthereumProvider } from "@walletconnect/ethereum-provider";
 
-// Define a mapping for wallet types with display names and (if needed) icons.
-const WALLET_MAP = {
-  metamask: {
-    name: "MetaMask",
-    icon: "/metamask-logo.webp"
-  },
-  trust: {
-    name: "Trust Wallet",
-    icon: "/trustwallet-logo.webp"
-  },
-  phantom: {
-    name: "Phantom",
-    icon: "/phantom-logo.webp"
-  }
-};
-
 export function WalletConnection() {
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
   const { showModal } = useModal();
@@ -34,7 +18,7 @@ export function WalletConnection() {
   const [showEvmModal, setShowEvmModal] = useState(false);
   const dropdownRef = useRef(null);
 
-  // Close the main dropdown when clicking outside.
+  // Close the dropdown when clicking outside.
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -70,43 +54,43 @@ export function WalletConnection() {
     }
   };
 
-  // EVM wallet connection using injected providers on chrome extensions.
-  // This function uses walletType (metamask, trust, phantom) to locate the proper injected provider.
+  // EVM wallet connection using an injected provider.
+  // It checks for a multi-provider array and then looks for a provider with the appropriate flag.
+  // For MetaMask, we check for `isMetaMask`. For Trust Wallet, we check for either `isTrust` or `isTrustWallet` (or fallback to window.trustwallet).
+  // For Phantom, we check for `isPhantom`.
   const handleSelectEvmWallet = async (walletType) => {
     setIsLoading(true);
     closeEvmWalletModal();
-    try {
-      if (!WALLET_MAP[walletType]) {
-        showNotification("Unknown wallet type.", "error");
-        setIsLoading(false);
-        return;
-      }
 
-      let provider;
-      // If multiple providers are injected, check window.ethereum.providers array.
+    try {
+      let provider = null;
+
+      // Use multiple providers if available.
       if (window.ethereum && window.ethereum.providers && window.ethereum.providers.length) {
         provider = window.ethereum.providers.find((p) => {
-          if (walletType === "metamask") return p.isMetaMask;
-          if (walletType === "trust") return p.isTrust || p.isTrustWallet;
-          if (walletType === "phantom") return p.isPhantom;
+          if (walletType === "metamask") return Boolean(p.isMetaMask);
+          if (walletType === "trust") return Boolean(p.isTrust || p.isTrustWallet);
+          if (walletType === "phantom") return Boolean(p.isPhantom);
           return false;
         });
       } else if (window.ethereum) {
-        // Single injected provider case.
-        if (
-          (walletType === "metamask" && window.ethereum.isMetaMask) ||
-          (walletType === "trust" && (window.ethereum.isTrust || window.ethereum.isTrustWallet)) ||
-          (walletType === "phantom" && window.ethereum.isPhantom)
-        ) {
+        // Fallback: single provider check.
+        if (walletType === "metamask" && window.ethereum.isMetaMask) {
+          provider = window.ethereum;
+        } else if (walletType === "trust" && (window.ethereum.isTrust || window.ethereum.isTrustWallet)) {
+          provider = window.ethereum;
+        } else if (walletType === "phantom" && window.ethereum.isPhantom) {
           provider = window.ethereum;
         }
       } else if (walletType === "trust" && window.trustwallet) {
-        // Trust Wallet also may expose its own provider.
         provider = window.trustwallet;
       }
 
       if (!provider) {
-        showNotification(`${WALLET_MAP[walletType].name} wallet is not installed. Please install it and try again.`, "error");
+        showNotification(
+          `${walletType.charAt(0).toUpperCase() + walletType.slice(1)} wallet is not installed. Please install it and try again.`,
+          "error"
+        );
         setIsLoading(false);
         return;
       }
@@ -125,7 +109,7 @@ export function WalletConnection() {
     }
   };
 
-  // Check user account on backend.
+  // Check user account on the backend.
   const checkUserAccount = async (address) => {
     try {
       const response = await fetch(`/api/user?walletAddress=${address}`);
@@ -166,7 +150,7 @@ export function WalletConnection() {
     return false;
   };
 
-  // Disconnect logic with debounce.
+  // Disconnect logic (debounced).
   const handleDisconnect = useCallback(
     debounce(async () => {
       setIsLoading(true);
