@@ -10,6 +10,27 @@ import { debounce } from "underscore";
 import { siweConfig } from "./siweConfig";
 import { EthereumProvider } from "@walletconnect/ethereum-provider";
 
+// Mapping wallet IDs (from the API) to their corresponding injected provider flag,
+// display name, and icon.
+// Modify or extend this mapping to suit any new wallets.
+const WALLET_MAP = {
+  "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96": {
+    flag: "isMetaMask",
+    name: "MetaMask",
+    icon: "/metamask-logo.webp"
+  },
+  "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0": {
+    flag: "isTrustWallet",
+    name: "Trust Wallet",
+    icon: "/trustwallet-logo.webp"
+  },
+  "phantom": {
+    flag: "isPhantom",
+    name: "Phantom",
+    icon: "/phantom-logo.webp"
+  }
+};
+
 export function WalletConnection() {
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
   const { showModal } = useModal();
@@ -67,34 +88,33 @@ export function WalletConnection() {
   };
 
   // EVM wallet connection using injected providers from chrome extensions.
-  const handleSelectEvmWallet = async (walletType) => {
+  // Now uses a wallet ID parameter and the WALLET_MAP to select the proper provider.
+  const handleSelectEvmWallet = async (walletId) => {
     setIsLoading(true);
     closeEvmWalletModal();
     try {
+      if (!WALLET_MAP[walletId]) {
+        showNotification("Unknown wallet type.", "error");
+        setIsLoading(false);
+        return;
+      }
+      const { flag, name } = WALLET_MAP[walletId];
+
+      let provider;
       if (window.ethereum) {
-        let provider;
         // If multiple providers are injected, iterate through the providers array.
         if (window.ethereum.providers && window.ethereum.providers.length) {
-          provider = window.ethereum.providers.find((p) => {
-            if (walletType === "metamask") return p.isMetaMask;
-            if (walletType === "phantom") return p.isPhantom;
-            if (walletType === "trust") return p.isTrustWallet;
-            return false;
-          });
+          provider = window.ethereum.providers.find((p) => p[flag]);
         } else {
-          // Only one provider was injected. Ensure it matches the wallet type.
-          if (
-            (walletType === "metamask" && window.ethereum.isMetaMask) ||
-            (walletType === "phantom" && window.ethereum.isPhantom) ||
-            (walletType === "trust" && window.ethereum.isTrustWallet)
-          ) {
+          // If only one provider, check if it matches the required flag.
+          if (window.ethereum[flag]) {
             provider = window.ethereum;
           }
         }
-        // If the appropriate provider is not found, show notification.
+        // If the appropriate provider is not found, notify the user.
         if (!provider) {
           showNotification(
-            `${walletType.charAt(0).toUpperCase() + walletType.slice(1)} wallet is not installed. Please install it and try again.`,
+            `${name} wallet is not installed. Please install it and try again.`,
             "error"
           );
           setIsLoading(false);
@@ -106,7 +126,7 @@ export function WalletConnection() {
           await checkUserAccount(address);
         }
       } else {
-        // Fallback: Initialize WalletConnect's EthereumProvider.
+        // Fallback: Use WalletConnect's EthereumProvider if no injected provider is present.
         const provider = await EthereumProvider.init({
           projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
           metadata: {
@@ -121,7 +141,7 @@ export function WalletConnection() {
           },
         });
 
-        // Subscribe to display_uri event and use deep linking if needed.
+        // Use deep linking if needed.
         provider.on("display_uri", (uri) => {
           console.log("Deep link URI:", uri);
           window.location.href = uri;
@@ -223,6 +243,7 @@ export function WalletConnection() {
           </Button>
         </motion.div>
       )}
+
       {showOptions && (
         <div
           ref={dropdownRef}
@@ -245,6 +266,7 @@ export function WalletConnection() {
           </div>
         </div>
       )}
+
       {showEvmModal && (
         <div className="absolute top-full right-0 mt-2 w-64 z-50 bg-[#2F2F2F] text-white rounded-md shadow-lg p-4">
           <h2 className="text-lg font-semibold mb-3">Select EVM Wallet</h2>
@@ -253,22 +275,36 @@ export function WalletConnection() {
               onClick={() => handleSelectEvmWallet("phantom")}
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
             >
-              <img src="/phantom-logo.webp" alt="Phantom" className="w-8 h-8 mr-3" />
-              <span>Phantom</span>
+              <img src={WALLET_MAP["phantom"].icon} alt="Phantom" className="w-8 h-8 mr-3" />
+              <span>{WALLET_MAP["phantom"].name}</span>
             </button>
             <button
-              onClick={() => handleSelectEvmWallet("metamask")}
+              onClick={() =>
+                handleSelectEvmWallet("c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96")
+              }
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
             >
-              <img src="/metamask-logo.webp" alt="MetaMask" className="w-8 h-8 mr-3" />
-              <span>MetaMask</span>
+              <img
+                src={WALLET_MAP["c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96"].icon}
+                alt="MetaMask"
+                className="w-8 h-8 mr-3"
+              />
+              <span>{WALLET_MAP["c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96"].name}</span>
             </button>
             <button
-              onClick={() => handleSelectEvmWallet("trust")}
+              onClick={() =>
+                handleSelectEvmWallet("4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0")
+              }
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
             >
-              <img src="/trustwallet-logo.webp" alt="Trust Wallet" className="w-8 h-8 mr-3" />
-              <span>Trust Wallet</span>
+              <img
+                src={
+                  WALLET_MAP["4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0"].icon
+                }
+                alt="Trust Wallet"
+                className="w-8 h-8 mr-3"
+              />
+              <span>{WALLET_MAP["4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0"].name}</span>
             </button>
           </div>
           <button onClick={closeEvmWalletModal} className="mt-4 text-red-400 hover:underline">
