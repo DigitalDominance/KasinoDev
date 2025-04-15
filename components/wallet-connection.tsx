@@ -10,31 +10,19 @@ import { debounce } from "underscore";
 import { siweConfig } from "./siweConfig";
 import { EthereumProvider } from "@walletconnect/ethereum-provider";
 
-// Mapping wallet IDs (from the API) to their display name, icon, and deep link information.
+// Define a mapping for wallet types with display names and (if needed) icons.
 const WALLET_MAP = {
-  "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96": {
+  metamask: {
     name: "MetaMask",
-    icon: "/metamask-logo.webp",
-    deepLinks: {
-      native: "metamask://",
-      universal: "https://metamask.app.link"
-    }
+    icon: "/metamask-logo.webp"
   },
-  "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0": {
+  trust: {
     name: "Trust Wallet",
-    icon: "/trustwallet-logo.webp",
-    deepLinks: {
-      native: "trust://",
-      universal: "https://link.trustwallet.com"
-    }
+    icon: "/trustwallet-logo.webp"
   },
-  "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393": {
+  phantom: {
     name: "Phantom",
-    icon: "/phantom-logo.webp",
-    deepLinks: {
-      // Phantom only provides the universal deep link.
-      universal: "https://phantom.app/ul/v1/connect"
-    }
+    icon: "/phantom-logo.webp"
   }
 };
 
@@ -46,7 +34,7 @@ export function WalletConnection() {
   const [showEvmModal, setShowEvmModal] = useState(false);
   const dropdownRef = useRef(null);
 
-  // Close the dropdown when clicking outside.
+  // Close the main dropdown when clicking outside.
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -57,13 +45,13 @@ export function WalletConnection() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Toggle dropdowns.
+  // Toggle dropdown visibility.
   const openWalletOptions = () => setShowOptions((prev) => !prev);
   const closeWalletOptions = () => setShowOptions(false);
   const openEvmWalletModal = () => setShowEvmModal(true);
   const closeEvmWalletModal = () => setShowEvmModal(false);
 
-  // Kasware connection logic (remains unchanged).
+  // Kasware connection logic remains unchanged.
   const handleKaswareConnect = async () => {
     setIsLoading(true);
     closeWalletOptions();
@@ -82,62 +70,55 @@ export function WalletConnection() {
     }
   };
 
-  // Deep link handler – uses the native deep link if available; otherwise falls back to universal.
-  const handleURI = (uri, deepLinks) => {
-    console.log("display_uri:", uri);
-    let deepLinkUrl;
-    if (deepLinks && deepLinks.native) {
-      deepLinkUrl = `${deepLinks.native}?uri=${encodeURIComponent(uri)}`;
-    } else if (deepLinks && deepLinks.universal) {
-      deepLinkUrl = `${deepLinks.universal}?uri=${encodeURIComponent(uri)}`;
-    } else {
-      deepLinkUrl = uri;
-    }
-    // Open the deep link URL in a new tab.
-    window.open(deepLinkUrl, "_blank");
-  };
-
-  // EVM wallet connection always uses the WalletConnect provider with deep linking.
-  const handleSelectEvmWallet = async (walletId) => {
+  // EVM wallet connection using injected providers on chrome extensions.
+  // This function uses walletType (metamask, trust, phantom) to locate the proper injected provider.
+  const handleSelectEvmWallet = async (walletType) => {
     setIsLoading(true);
     closeEvmWalletModal();
     try {
-      if (!WALLET_MAP[walletId]) {
+      if (!WALLET_MAP[walletType]) {
         showNotification("Unknown wallet type.", "error");
         setIsLoading(false);
         return;
       }
-      const { name, deepLinks } = WALLET_MAP[walletId];
 
-      // Always initialize the EthereumProvider using WalletConnect.
-      const provider = await EthereumProvider.init({
-        projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
-        metadata: {
-          name: "KasCasino Wallet",
-          description: "Wallet for KasCasino",
-          url: "https://kasino-dev-38d41436adab.herokuapp.com/",
-          icons: ["https://your_wallet_icon.png"]
-        },
-        showQrModal: false, // QR modal disabled; using deep linking
-        optionalChains: [12211],
-        rpcMap: {
-          12211: "https://www.kasplextest.xyz"
+      let provider;
+      // If multiple providers are injected, check window.ethereum.providers array.
+      if (window.ethereum && window.ethereum.providers && window.ethereum.providers.length) {
+        provider = window.ethereum.providers.find((p) => {
+          if (walletType === "metamask") return p.isMetaMask;
+          if (walletType === "trust") return p.isTrust || p.isTrustWallet;
+          if (walletType === "phantom") return p.isPhantom;
+          return false;
+        });
+      } else if (window.ethereum) {
+        // Single injected provider case.
+        if (
+          (walletType === "metamask" && window.ethereum.isMetaMask) ||
+          (walletType === "trust" && (window.ethereum.isTrust || window.ethereum.isTrustWallet)) ||
+          (walletType === "phantom" && window.ethereum.isPhantom)
+        ) {
+          provider = window.ethereum;
         }
-      });
+      } else if (walletType === "trust" && window.trustwallet) {
+        // Trust Wallet also may expose its own provider.
+        provider = window.trustwallet;
+      }
 
-      // Always subscribe to display_uri to handle deep linking.
-      provider.on("display_uri", (uri) => handleURI(uri, deepLinks));
+      if (!provider) {
+        showNotification(`${WALLET_MAP[walletType].name} wallet is not installed. Please install it and try again.`, "error");
+        setIsLoading(false);
+        return;
+      }
 
-      // Initiate the connection.
-      const session = await provider.connect();
-      if (session && session.accounts && session.accounts.length > 0) {
-        const address = session.accounts[0];
+      // Request accounts from the selected provider.
+      const accounts = await provider.request({ method: "eth_requestAccounts" });
+      if (accounts && accounts.length > 0) {
+        const address = accounts[0];
         await checkUserAccount(address);
-      } else {
-        throw new Error("No accounts returned from the session.");
       }
     } catch (error) {
-      console.error("Error using wallet connection:", error);
+      console.error("Error using injected wallet connection:", error);
       showNotification("Failed to connect EVM wallet. Please try again.", "error");
     } finally {
       setIsLoading(false);
@@ -240,7 +221,7 @@ export function WalletConnection() {
           </div>
           <div
             className="flex items-center cursor-pointer hover:bg-[#3A3A3A] p-2 rounded transition-all mt-2"
-            onClick={openEvmWalletModal}
+            onClick={() => setShowEvmModal(true)}
           >
             <img src="/walletconnectlogo.webp" alt="EVM Wallet (WalletConnect)" className="w-8 h-8 mr-3" />
             <span>EVM Wallet (WalletConnect)</span>
@@ -253,41 +234,25 @@ export function WalletConnection() {
           <h2 className="text-lg font-semibold mb-3">Select EVM Wallet</h2>
           <div className="flex flex-col space-y-3">
             <button
-              onClick={() => handleSelectEvmWallet("a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393")}
+              onClick={() => handleSelectEvmWallet("phantom")}
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
             >
-              <img
-                src={WALLET_MAP["a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393"].icon}
-                alt="Phantom"
-                className="w-8 h-8 mr-3"
-              />
-              <span>{WALLET_MAP["a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393"].name}</span>
+              <img src="/phantom-logo.webp" alt="Phantom" className="w-8 h-8 mr-3" />
+              <span>Phantom</span>
             </button>
             <button
-              onClick={() =>
-                handleSelectEvmWallet("c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96")
-              }
+              onClick={() => handleSelectEvmWallet("metamask")}
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
             >
-              <img
-                src={WALLET_MAP["c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96"].icon}
-                alt="MetaMask"
-                className="w-8 h-8 mr-3"
-              />
-              <span>{WALLET_MAP["c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96"].name}</span>
+              <img src="/metamask-logo.webp" alt="MetaMask" className="w-8 h-8 mr-3" />
+              <span>MetaMask</span>
             </button>
             <button
-              onClick={() =>
-                handleSelectEvmWallet("4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0")
-              }
+              onClick={() => handleSelectEvmWallet("trust")}
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
             >
-              <img
-                src={WALLET_MAP["4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0"].icon}
-                alt="Trust Wallet"
-                className="w-8 h-8 mr-3"
-              />
-              <span>{WALLET_MAP["4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0"].name}</span>
+              <img src="/trustwallet-logo.webp" alt="Trust Wallet" className="w-8 h-8 mr-3" />
+              <span>Trust Wallet</span>
             </button>
           </div>
           <button onClick={closeEvmWalletModal} className="mt-4 text-red-400 hover:underline">
