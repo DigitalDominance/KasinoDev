@@ -272,11 +272,11 @@ export function WalletConnection() {
           <h2 className="text-lg font-semibold mb-3">Select EVM Wallet</h2>
           <div className="flex flex-col space-y-3">
             <button
-              onClick={() => handleSelectEvmWallet("phantom")}
+              onClick={() => handleSelectEvmWallet("Phantom")}
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
             >
-              <img src={WALLET_MAP["phantom"].icon} alt="Phantom" className="w-8 h-8 mr-3" />
-              <span>{WALLET_MAP["phantom"].name}</span>
+              <img src={WALLET_MAP["Phantom"].icon} alt="Phantom" className="w-8 h-8 mr-3" />
+              <span>{WALLET_MAP["Phantom"].name}</span>
             </button>
             <button
               onClick={() =>
