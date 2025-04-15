@@ -4,7 +4,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { debounce } from "underscore";
 import { Core } from "@walletconnect/core";
 import { WalletKit } from "@reown/walletkit";
-import { buildApprovedNamespaces, getSdkError } from "@walletconnect/utils";
+import { buildApprovedNamespaces, getSdkError, populateAuthPayload } from "@walletconnect/utils";
 import { defineChain } from "@reown/appkit/networks";
 
 import { useWallet, WalletStatus } from "@/contexts/WalletContext";
@@ -34,14 +34,22 @@ const kasplexTestnet = defineChain({
 });
 
 // -----------------------------------------------------------------------
+// Dummy signing function – replace with your secure signer.
+async function dummySignMessage(message: string): Promise<string> {
+  // In a production wallet, use your crypto wallet API to sign the message securely.
+  // Here we return a dummy signature.
+  return Promise.resolve("0xdummysignature");
+}
+
+// -----------------------------------------------------------------------
 // 2. React component for wallet connection integrating both Kasware (unchanged)
-// and WalletKit (using automatic pairing via the Pairing API)
+// and WalletKit with automatic pairing and one‑click authentication.
 export function WalletConnection() {
   // Kasware integration (unchanged)
   const { isConnected, connectWallet, disconnectWallet, showNotification } = useWallet();
   const { showModal } = useModal();
 
-  // Local state for WalletKit instance and connected EVM wallet address.
+  // State for WalletKit instance and the connected EVM wallet address.
   const [walletKit, setWalletKit] = useState<any>(null);
   const [walletKitAddress, setWalletKitAddress] = useState<string | null>(null);
 
@@ -51,10 +59,9 @@ export function WalletConnection() {
   const [showEvmModal, setShowEvmModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Combined connection state: either Kasware or WalletKit (EVM) is connected.
+  // Combined connection state.
   const isWalletConnected = isConnected || Boolean(walletKitAddress);
 
-  // ---------------------------------------------------------------------
   // Helper functions for dropdown.
   const openWalletOptions = () => setShowOptions((prev) => !prev);
   const closeWalletOptions = () => {
@@ -89,18 +96,18 @@ export function WalletConnection() {
   }, []);
 
   // ---------------------------------------------------------------------
-  // Automatic Pairing: Check for a pairing URI in the URL query parameter ("wc") and pair automatically.
+  // Automatic Pairing: Check URL for a pairing URI ("wc") and trigger pairing.
   useEffect(() => {
     if (!walletKit) return;
-    const searchParams = new URLSearchParams(window.location.search);
-    let pairingUri = searchParams.get("wc");
     (async () => {
       try {
-        // If no pairing URI is found in the URL, generate one automatically.
+        const searchParams = new URLSearchParams(window.location.search);
+        let pairingUri = searchParams.get("wc");
         if (!pairingUri) {
+          // Generate pairing URI automatically.
           const { uri } = await walletKit.core.pairing.create();
           pairingUri = uri;
-          // Optionally, you might update the URL or store this URI for further use.
+          // Optionally update the URL or store the URI for reference.
         }
         await walletKit.pair({ uri: pairingUri });
       } catch (error) {
@@ -111,7 +118,7 @@ export function WalletConnection() {
   }, [walletKit, showNotification]);
 
   // ---------------------------------------------------------------------
-  // Session Proposal Handling: Upon receiving a session proposal, build approved namespaces and approve.
+  // Session Proposal Handling: Approve sessions when proposals are received.
   useEffect(() => {
     if (!walletKit) return;
     const onSessionProposal = async (proposal: any) => {
@@ -156,8 +163,51 @@ export function WalletConnection() {
   }, [walletKit, walletKitAddress]);
 
   // ---------------------------------------------------------------------
-  // EVM Wallet Connection via WalletKit: When an EVM wallet type is selected,
-  // retrieve (or generate) the pairing URI and invoke pairing.
+  // One-click Authentication Handling:
+  // Listen for the "session_authenticate" event and automatically sign the authentication message.
+  useEffect(() => {
+    if (!walletKit || !walletKitAddress) return;
+    const onSessionAuthenticate = async (payload: any) => {
+      try {
+        // Populate the authentication payload with supported chains and methods.
+        const supportedChains = ["eip155:12211"];
+        const supportedMethods = ["personal_sign", "eth_sendTransaction", "eth_signTypedData"];
+        const authPayload = populateAuthPayload({
+          authPayload: payload.params.authPayload,
+          chains: supportedChains,
+          methods: supportedMethods,
+        });
+        // Prepare the issuer string in CAIP-10 format.
+        const iss = `eip155:12211:${walletKitAddress}`;
+        // Format the authentication message.
+        const message = walletKit.formatAuthMessage({ request: authPayload, iss });
+        // Sign the message – replace with your wallet's secure signing method.
+        const signature = await dummySignMessage(message);
+        // Build authentication object.
+        const auth = {
+          ...authPayload,
+          signature: { t: "eip191", s: signature },
+        };
+        // Approve the authentication request.
+        await walletKit.approveSessionAuthenticate({
+          id: payload.id,
+          auths: [auth],
+        });
+      } catch (error) {
+        console.error("Authentication request error", error);
+        await walletKit.rejectSessionAuthenticate({
+          id: payload.id,
+          reason: getSdkError("USER_REJECTED"),
+        });
+      }
+    };
+    walletKit.on("session_authenticate", onSessionAuthenticate);
+    return () => walletKit.off("session_authenticate", onSessionAuthenticate);
+  }, [walletKit, walletKitAddress]);
+
+  // ---------------------------------------------------------------------
+  // EVM Wallet Connection via WalletKit:
+  // When a user selects an EVM wallet type from the dropdown, use the pairing URI.
   const handleSelectEvmWallet = async (
     walletType: "metamask" | "phantom" | "trust" | "uniswap"
   ) => {
@@ -184,12 +234,12 @@ export function WalletConnection() {
       const searchParams = new URLSearchParams(window.location.search);
       let pairingUri = searchParams.get("wc");
       if (!pairingUri) {
-        // If not provided, generate one automatically.
+        // Generate a pairing URI automatically if not found.
         const { uri } = await walletKit.core.pairing.create();
         pairingUri = uri;
       }
       await walletKit.pair({ uri: pairingUri, includeWalletIds: walletId ? [walletId] : undefined });
-      // Successful pairing will lead to session proposals that update walletKitAddress.
+      // Pairing triggers the session_proposal event, which will update walletKitAddress.
     } catch (error) {
       console.error("Error during WalletKit pairing:", error);
       showNotification("Failed to connect EVM wallet. Please try again.", "error");
@@ -201,7 +251,7 @@ export function WalletConnection() {
   const openEvmWalletModal = () => setShowEvmModal(true);
 
   // ---------------------------------------------------------------------
-  // Kasware Connection Logic (unchanged)
+  // Kasware Connection Logic (unchanged).
   const handleKaswareConnect = async () => {
     setIsLoading(true);
     closeWalletOptions();
@@ -221,7 +271,7 @@ export function WalletConnection() {
   };
 
   // ---------------------------------------------------------------------
-  // Backend Account Verification: Once connected, verify the user account.
+  // Backend Account Verification.
   useEffect(() => {
     if (walletKitAddress) {
       checkUserAccount(walletKitAddress);
@@ -248,7 +298,7 @@ export function WalletConnection() {
   };
 
   // ---------------------------------------------------------------------
-  // Kasware Network Verification (unchanged)
+  // Kasware Network Verification (unchanged).
   const checkNetwork = async () => {
     const kasware = (window as any).kasware;
     if (kasware) {
@@ -270,7 +320,7 @@ export function WalletConnection() {
   };
 
   // ---------------------------------------------------------------------
-  // Disconnect Logic: Disconnect both Kasware and WalletKit sessions.
+  // Disconnect Logic: Disconnect Kasware and WalletKit sessions.
   const disconnectWalletKit = async () => {
     if (walletKit) {
       try {
@@ -310,66 +360,54 @@ export function WalletConnection() {
       <WalletStatus />
       {!isWalletConnected ? (
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-          <Button
-            onClick={openWalletOptions}
-            disabled={isLoading}
-            className="bg-gradient-to-r from-[#49EACB] to-[#49EACB]/80 hover:opacity-90 text-black font-semibold"
-          >
+          <Button onClick={openWalletOptions} disabled={isLoading} className="bg-gradient-to-r from-[#49EACB] to-[#49EACB]/80 hover:opacity-90 text-black font-semibold">
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Connect Wallet"}
           </Button>
         </motion.div>
       ) : (
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-          <Button
-            onClick={handleDisconnect}
-            disabled={isLoading}
-            className="bg-gradient-to-r from-[#49EACB] to-[#49EACB]/80 hover:opacity-90 text-black font-semibold"
-          >
+          <Button onClick={handleDisconnect} disabled={isLoading} className="bg-gradient-to-r from-[#49EACB] to-[#49EACB]/80 hover:opacity-90 text-black font-semibold">
             {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Disconnect"}
           </Button>
         </motion.div>
       )}
-
       {showOptions && (
-        <div
-          ref={dropdownRef}
-          className="absolute top-full right-0 mt-2 w-64 z-50 bg-[#2F2F2F] text-white rounded-md shadow-lg p-4"
-        >
+        <div ref={dropdownRef} className="absolute top-full right-0 mt-2 w-64 z-50 bg-[#2F2F2F] text-white rounded-md shadow-lg p-4">
           <h2 className="text-lg font-semibold mb-3">Choose Wallet Type</h2>
           <div className="flex items-center cursor-pointer hover:bg-[#3A3A3A] p-2 rounded transition-all" onClick={handleKaswareConnect}>
             <img src="/kaswarelogo.webp" alt="Kasware Wallet" className="w-8 h-8 mr-3" />
             <span>Kasware Wallet</span>
           </div>
           <div className="flex items-center cursor-pointer hover:bg-[#3A3A3A] p-2 rounded transition-all mt-2" onClick={() => setShowEvmModal(true)}>
-            <img src="/walletconnectlogo.webp" alt="EVM Wallet (WalletKit)" className="w-8 h-8 mr-3" />
-            <span>EVM Wallet (WalletKit)</span>
+            <img src="/walletconnectlogo.webp" alt="EVM Wallet (WalletConnect)" className="w-8 h-8 mr-3" />
+            <span>EVM Wallet (WalletConnect)</span>
           </div>
-          {showEvmModal && (
-            <div className="mt-2">
-              <h3 className="text-md font-semibold mb-2">Select EVM Wallet</h3>
-              <div className="flex flex-col space-y-2">
-                <button onClick={() => handleSelectEvmWallet("phantom")} className="flex items-center p-2 hover:bg-[#3A3A3A] rounded" disabled={isLoading}>
-                  <img src="/phantom-logo.webp" alt="Phantom" className="w-8 h-8 mr-3" />
-                  <span>Phantom</span>
-                </button>
-                <button onClick={() => handleSelectEvmWallet("metamask")} className="flex items-center p-2 hover:bg-[#3A3A3A] rounded" disabled={isLoading}>
-                  <img src="/metamask-logo.webp" alt="MetaMask" className="w-8 h-8 mr-3" />
-                  <span>MetaMask</span>
-                </button>
-                <button onClick={() => handleSelectEvmWallet("trust")} className="flex items-center p-2 hover:bg-[#3A3A3A] rounded" disabled={isLoading}>
-                  <img src="/trustwallet-logo.webp" alt="Trust Wallet" className="w-8 h-8 mr-3" />
-                  <span>Trust Wallet</span>
-                </button>
-                <button onClick={() => handleSelectEvmWallet("uniswap")} className="flex items-center p-2 hover:bg-[#3A3A3A] rounded" disabled={isLoading}>
-                  <img src="/uniswap-logo.webp" alt="Uniswap Wallet" className="w-8 h-8 mr-3" />
-                  <span>Uniswap Wallet</span>
-                </button>
-              </div>
-              <button onClick={() => setShowEvmModal(false)} className="mt-2 text-red-400 hover:underline">
-                Cancel
-              </button>
-            </div>
-          )}
+        </div>
+      )}
+      {showEvmModal && (
+        <div className="absolute top-full right-0 mt-2 w-64 z-50 bg-[#2F2F2F] text-white rounded-md shadow-lg p-4">
+          <h2 className="text-lg font-semibold mb-3">Select EVM Wallet</h2>
+          <div className="flex flex-col space-y-3">
+            <button onClick={() => handleSelectEvmWallet("phantom")} className="flex items-center p-2 hover:bg-[#3A3A3A] rounded" disabled={isLoading}>
+              <img src="/phantom-logo.webp" alt="Phantom" className="w-8 h-8 mr-3" />
+              <span>Phantom</span>
+            </button>
+            <button onClick={() => handleSelectEvmWallet("metamask")} className="flex items-center p-2 hover:bg-[#3A3A3A] rounded" disabled={isLoading}>
+              <img src="/metamask-logo.webp" alt="MetaMask" className="w-8 h-8 mr-3" />
+              <span>MetaMask</span>
+            </button>
+            <button onClick={() => handleSelectEvmWallet("trust")} className="flex items-center p-2 hover:bg-[#3A3A3A] rounded" disabled={isLoading}>
+              <img src="/trustwallet-logo.webp" alt="Trust Wallet" className="w-8 h-8 mr-3" />
+              <span>Trust Wallet</span>
+            </button>
+            <button onClick={() => handleSelectEvmWallet("uniswap")} className="flex items-center p-2 hover:bg-[#3A3A3A] rounded" disabled={isLoading}>
+              <img src="/uniswap-logo.webp" alt="Uniswap Wallet" className="w-8 h-8 mr-3" />
+              <span>Uniswap Wallet</span>
+            </button>
+          </div>
+          <button onClick={() => setShowEvmModal(false)} className="mt-4 text-red-400 hover:underline">
+            Cancel
+          </button>
         </div>
       )}
     </div>
