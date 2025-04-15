@@ -32,6 +32,7 @@ const WALLET_MAP = {
     name: "Phantom",
     icon: "/phantom-logo.webp",
     deepLinks: {
+      // Phantom only provides the universal deep link.
       universal: "https://phantom.app/ul/v1/connect"
     }
   }
@@ -45,7 +46,7 @@ export function WalletConnection() {
   const [showEvmModal, setShowEvmModal] = useState(false);
   const dropdownRef = useRef(null);
 
-  // Close dropdown when clicking outside.
+  // Close the dropdown when clicking outside.
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -81,20 +82,22 @@ export function WalletConnection() {
     }
   };
 
-  // Deep link handler for WalletConnect fallback.
+  // Deep link handler – uses the native deep link if available; otherwise falls back to universal.
   const handleURI = (uri, deepLinks) => {
     console.log("display_uri:", uri);
-    if (deepLinks && deepLinks.universal) {
-      // Construct the deep link URL by appending the encoded WalletConnect URI.
-      const deepLinkUrl = `${deepLinks.universal}?uri=${encodeURIComponent(uri)}`;
-      window.location.href = deepLinkUrl;
+    let deepLinkUrl;
+    if (deepLinks && deepLinks.native) {
+      deepLinkUrl = `${deepLinks.native}?uri=${encodeURIComponent(uri)}`;
+    } else if (deepLinks && deepLinks.universal) {
+      deepLinkUrl = `${deepLinks.universal}?uri=${encodeURIComponent(uri)}`;
     } else {
-      window.location.href = uri;
+      deepLinkUrl = uri;
     }
+    // Open the deep link URL in a new tab.
+    window.open(deepLinkUrl, "_blank");
   };
 
-  // EVM wallet connection using WalletConnect's EthereumProvider with deep linking.
-  // This always uses deep linking (the display_uri event) to open the mobile wallet.
+  // EVM wallet connection always uses the WalletConnect provider with deep linking.
   const handleSelectEvmWallet = async (walletId) => {
     setIsLoading(true);
     closeEvmWalletModal();
@@ -115,14 +118,14 @@ export function WalletConnection() {
           url: "https://kasino-dev-38d41436adab.herokuapp.com/",
           icons: ["https://your_wallet_icon.png"]
         },
-        showQrModal: false, // QR modal is disabled because we use deep linking.
+        showQrModal: false, // QR modal disabled; using deep linking
         optionalChains: [12211],
         rpcMap: {
           12211: "https://www.kasplextest.xyz"
         }
       });
 
-      // Subscribe to display_uri and use our deep link handler.
+      // Always subscribe to display_uri to handle deep linking.
       provider.on("display_uri", (uri) => handleURI(uri, deepLinks));
 
       // Initiate the connection.
@@ -141,7 +144,7 @@ export function WalletConnection() {
     }
   };
 
-  // Check user account on the backend.
+  // Check user account on backend.
   const checkUserAccount = async (address) => {
     try {
       const response = await fetch(`/api/user?walletAddress=${address}`);
@@ -250,9 +253,7 @@ export function WalletConnection() {
           <h2 className="text-lg font-semibold mb-3">Select EVM Wallet</h2>
           <div className="flex flex-col space-y-3">
             <button
-              onClick={() =>
-                handleSelectEvmWallet("a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393")
-              }
+              onClick={() => handleSelectEvmWallet("a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393")}
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
             >
               <img
