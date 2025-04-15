@@ -10,19 +10,31 @@ import { debounce } from "underscore";
 import { siweConfig } from "./siweConfig";
 import { EthereumProvider } from "@walletconnect/ethereum-provider";
 
-// Mapping wallet IDs (from the API) to their display name and icon.
+// Mapping wallet IDs (from the API) to their display name, icon, and deep link information.
 const WALLET_MAP = {
   "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96": {
     name: "MetaMask",
-    icon: "/metamask-logo.webp"
+    icon: "/metamask-logo.webp",
+    deepLinks: {
+      native: "metamask://",
+      universal: "https://metamask.app.link"
+    }
   },
   "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0": {
     name: "Trust Wallet",
-    icon: "/trustwallet-logo.webp"
+    icon: "/trustwallet-logo.webp",
+    deepLinks: {
+      native: "trust://",
+      universal: "https://link.trustwallet.com"
+    }
   },
   "a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393": {
     name: "Phantom",
-    icon: "/phantom-logo.webp"
+    icon: "/phantom-logo.webp",
+    deepLinks: {
+      // Phantom only provides the universal deep link
+      universal: "https://phantom.app/ul/v1/connect"
+    }
   }
 };
 
@@ -70,8 +82,8 @@ export function WalletConnection() {
     }
   };
 
-  // EVM wallet connection using the injected provider.
-  // Uses the wallet id solely for display and identification.
+  // EVM wallet connection using the injected provider or WalletConnect with deep linking.
+  // Uses the wallet id for display and deep link identification.
   const handleSelectEvmWallet = async (walletId) => {
     setIsLoading(true);
     closeEvmWalletModal();
@@ -81,10 +93,11 @@ export function WalletConnection() {
         setIsLoading(false);
         return;
       }
-      const { name } = WALLET_MAP[walletId];
+      const { name, deepLinks } = WALLET_MAP[walletId];
 
       let provider;
       if (window.ethereum) {
+        // Use the injected provider (e.g., desktop extension).
         provider = window.ethereum;
         const accounts = await provider.request({ method: "eth_requestAccounts" });
         if (accounts && accounts.length > 0) {
@@ -92,7 +105,7 @@ export function WalletConnection() {
           await checkUserAccount(address);
         }
       } else {
-        // Fallback: use WalletConnect's EthereumProvider.
+        // Fallback: Use WalletConnect's EthereumProvider and deep linking.
         provider = await EthereumProvider.init({
           projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
           metadata: {
@@ -107,10 +120,16 @@ export function WalletConnection() {
           }
         });
 
-        // Deep linking if needed.
+        // Subscribe to display_uri to handle deep linking.
         provider.on("display_uri", (uri) => {
-          console.log("Deep link URI:", uri);
-          window.location.href = uri;
+          console.log("display_uri:", uri);
+          if (deepLinks && deepLinks.universal) {
+            // Construct the deep link URL by appending the WalletConnect URI as a query param.
+            const deepLinkUrl = `${deepLinks.universal}?uri=${encodeURIComponent(uri)}`;
+            window.location.href = deepLinkUrl;
+          } else {
+            window.location.href = uri;
+          }
         });
 
         const session = await provider.connect();
