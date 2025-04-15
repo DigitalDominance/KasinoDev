@@ -66,14 +66,41 @@ export function WalletConnection() {
     }
   };
 
-  // EVM wallet connection without QR modal (using injected provider in chrome extensions).
+  // EVM wallet connection using injected providers from chrome extensions.
   const handleSelectEvmWallet = async (walletType) => {
     setIsLoading(true);
     closeEvmWalletModal();
     try {
-      // Use injected provider (e.g., MetaMask, Phantom) if available.
       if (window.ethereum) {
-        const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+        let provider;
+        // If multiple providers are injected, iterate through the providers array.
+        if (window.ethereum.providers && window.ethereum.providers.length) {
+          provider = window.ethereum.providers.find((p) => {
+            if (walletType === "metamask") return p.isMetaMask;
+            if (walletType === "phantom") return p.isPhantom;
+            if (walletType === "trust") return p.isTrustWallet;
+            return false;
+          });
+        } else {
+          // Only one provider was injected. Ensure it matches the wallet type.
+          if (
+            (walletType === "metamask" && window.ethereum.isMetaMask) ||
+            (walletType === "phantom" && window.ethereum.isPhantom) ||
+            (walletType === "trust" && window.ethereum.isTrustWallet)
+          ) {
+            provider = window.ethereum;
+          }
+        }
+        // If the appropriate provider is not found, show notification.
+        if (!provider) {
+          showNotification(
+            `${walletType.charAt(0).toUpperCase() + walletType.slice(1)} wallet is not installed. Please install it and try again.`,
+            "error"
+          );
+          setIsLoading(false);
+          return;
+        }
+        const accounts = await provider.request({ method: "eth_requestAccounts" });
         if (accounts && accounts.length > 0) {
           const address = accounts[0];
           await checkUserAccount(address);
@@ -94,15 +121,12 @@ export function WalletConnection() {
           },
         });
 
-        // Instead of showing a QR modal, if no injected provider exists,
-        // subscribe to the display_uri event and use deep linking.
+        // Subscribe to display_uri event and use deep linking if needed.
         provider.on("display_uri", (uri) => {
           console.log("Deep link URI:", uri);
-          // Directly navigate to the URI to trigger connection in mobile browsers.
           window.location.href = uri;
         });
 
-        // Call connect() to establish a session.
         const session = await provider.connect();
         if (session && session.accounts && session.accounts.length > 0) {
           const address = session.accounts[0];
@@ -112,7 +136,7 @@ export function WalletConnection() {
         }
       }
     } catch (error) {
-      console.error("Error using WalletConnect for EVM wallet connection:", error);
+      console.error("Error using wallet connection:", error);
       showNotification("Failed to connect EVM wallet. Please try again.", "error");
     } finally {
       setIsLoading(false);
@@ -245,13 +269,6 @@ export function WalletConnection() {
             >
               <img src="/trustwallet-logo.webp" alt="Trust Wallet" className="w-8 h-8 mr-3" />
               <span>Trust Wallet</span>
-            </button>
-            <button
-              onClick={() => handleSelectEvmWallet("uniswap")}
-              className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
-            >
-              <img src="/uniswap-logo.webp" alt="Uniswap Wallet" className="w-8 h-8 mr-3" />
-              <span>Uniswap Wallet</span>
             </button>
           </div>
           <button onClick={closeEvmWalletModal} className="mt-4 text-red-400 hover:underline">
