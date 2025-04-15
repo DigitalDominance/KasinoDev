@@ -32,7 +32,6 @@ const WALLET_MAP = {
     name: "Phantom",
     icon: "/phantom-logo.webp",
     deepLinks: {
-      // Phantom only provides the universal deep link
       universal: "https://phantom.app/ul/v1/connect"
     }
   }
@@ -46,7 +45,7 @@ export function WalletConnection() {
   const [showEvmModal, setShowEvmModal] = useState(false);
   const dropdownRef = useRef(null);
 
-  // Close the dropdown when clicking outside.
+  // Close dropdown when clicking outside.
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -82,8 +81,20 @@ export function WalletConnection() {
     }
   };
 
-  // EVM wallet connection using the injected provider or WalletConnect with deep linking.
-  // Uses the wallet id for display and deep link identification.
+  // Deep link handler for WalletConnect fallback.
+  const handleURI = (uri, deepLinks) => {
+    console.log("display_uri:", uri);
+    if (deepLinks && deepLinks.universal) {
+      // Construct the deep link URL by appending the encoded WalletConnect URI.
+      const deepLinkUrl = `${deepLinks.universal}?uri=${encodeURIComponent(uri)}`;
+      window.location.href = deepLinkUrl;
+    } else {
+      window.location.href = uri;
+    }
+  };
+
+  // EVM wallet connection using WalletConnect's EthereumProvider with deep linking.
+  // This always uses deep linking (the display_uri event) to open the mobile wallet.
   const handleSelectEvmWallet = async (walletId) => {
     setIsLoading(true);
     closeEvmWalletModal();
@@ -95,50 +106,32 @@ export function WalletConnection() {
       }
       const { name, deepLinks } = WALLET_MAP[walletId];
 
-      let provider;
-      if (window.ethereum) {
-        // Use the injected provider (e.g., desktop extension).
-        provider = window.ethereum;
-        const accounts = await provider.request({ method: "eth_requestAccounts" });
-        if (accounts && accounts.length > 0) {
-          const address = accounts[0];
-          await checkUserAccount(address);
+      // Always initialize the EthereumProvider using WalletConnect.
+      const provider = await EthereumProvider.init({
+        projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
+        metadata: {
+          name: "KasCasino Wallet",
+          description: "Wallet for KasCasino",
+          url: "https://kasino-dev-38d41436adab.herokuapp.com/",
+          icons: ["https://your_wallet_icon.png"]
+        },
+        showQrModal: false, // QR modal is disabled because we use deep linking.
+        optionalChains: [12211],
+        rpcMap: {
+          12211: "https://www.kasplextest.xyz"
         }
+      });
+
+      // Subscribe to display_uri and use our deep link handler.
+      provider.on("display_uri", (uri) => handleURI(uri, deepLinks));
+
+      // Initiate the connection.
+      const session = await provider.connect();
+      if (session && session.accounts && session.accounts.length > 0) {
+        const address = session.accounts[0];
+        await checkUserAccount(address);
       } else {
-        // Fallback: Use WalletConnect's EthereumProvider and deep linking.
-        provider = await EthereumProvider.init({
-          projectId: process.env.NEXT_PUBLIC_PROJECT_ID,
-          metadata: {
-            name: "KasCasino Wallet",
-            description: "Wallet for KasCasino",
-            url: "https://kasino-dev-38d41436adab.herokuapp.com/",
-            icons: ["https://your_wallet_icon.png"]
-          },
-          optionalChains: [12211],
-          rpcMap: {
-            12211: "https://www.kasplextest.xyz"
-          }
-        });
-
-        // Subscribe to display_uri to handle deep linking.
-        provider.on("display_uri", (uri) => {
-          console.log("display_uri:", uri);
-          if (deepLinks && deepLinks.universal) {
-            // Construct the deep link URL by appending the WalletConnect URI as a query param.
-            const deepLinkUrl = `${deepLinks.universal}?uri=${encodeURIComponent(uri)}`;
-            window.location.href = deepLinkUrl;
-          } else {
-            window.location.href = uri;
-          }
-        });
-
-        const session = await provider.connect();
-        if (session && session.accounts && session.accounts.length > 0) {
-          const address = session.accounts[0];
-          await checkUserAccount(address);
-        } else {
-          throw new Error("No accounts returned from the session.");
-        }
+        throw new Error("No accounts returned from the session.");
       }
     } catch (error) {
       console.error("Error using wallet connection:", error);
@@ -148,7 +141,7 @@ export function WalletConnection() {
     }
   };
 
-  // Check user account on backend.
+  // Check user account on the backend.
   const checkUserAccount = async (address) => {
     try {
       const response = await fetch(`/api/user?walletAddress=${address}`);
@@ -257,10 +250,16 @@ export function WalletConnection() {
           <h2 className="text-lg font-semibold mb-3">Select EVM Wallet</h2>
           <div className="flex flex-col space-y-3">
             <button
-              onClick={() => handleSelectEvmWallet("a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393")}
+              onClick={() =>
+                handleSelectEvmWallet("a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393")
+              }
               className="flex items-center p-2 hover:bg-[#3A3A3A] rounded"
             >
-              <img src={WALLET_MAP["a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393"].icon} alt="Phantom" className="w-8 h-8 mr-3" />
+              <img
+                src={WALLET_MAP["a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393"].icon}
+                alt="Phantom"
+                className="w-8 h-8 mr-3"
+              />
               <span>{WALLET_MAP["a797aa35c0fadbfc1a53e7f675162ed5226968b44a19ee3d24385c64d1d3c393"].name}</span>
             </button>
             <button
