@@ -13,6 +13,7 @@ import { WalletConnection } from "@/components/wallet-connection";
 import { XPDisplay } from "@/app/page";
 import { Montserrat } from "next/font/google";
 import { useWallet } from "@/contexts/WalletContext";
+import { v4 as uuidv4 } from "uuid";
 
 const montserrat = Montserrat({
   weight: "700",
@@ -23,13 +24,13 @@ const montserrat = Montserrat({
 const HOUSE_EDGE_PERCENT = 5;
 const ODDS_API_HOST = "https://api.the-odds-api.com";
 
-// Helper: Adjust odds by reducing the potential payout by 5% and round to 2 decimals.
+// Helper to adjust odds (simplified conversion) and round to 2 decimals.
 function adjustOdds(apiOdds: number): number {
   const adjusted = apiOdds * (1 - HOUSE_EDGE_PERCENT / 100);
   return Number(adjusted.toFixed(2));
 }
 
-// Accepted sports in our desired order.
+// Accepted sports in desired order.
 const acceptedSports = [
   "mma_mixed_martial_arts",
   "boxing_boxing",
@@ -41,12 +42,40 @@ const acceptedSports = [
   "soccer_usa_mls",
 ];
 
-// Helper: Format team names with "vs" instead of "@".
+// Helper to format team names (replacing any "@" with "vs").
 function formatEventTeams(away: string, home: string) {
   return `${away} vs ${home}`;
 }
 
-// Group events by the day (using local date string).
+// Helper: Calculate average odds for each outcome in an event.
+// It assumes that each bookmaker provides a h2h market with outcomes; it will average all odds per team.
+function calculateAverageOdds(event: any): { [team: string]: number } {
+  const oddsMap: { [team: string]: number[] } = {};
+  if (event.bookmakers && event.bookmakers.length) {
+    event.bookmakers.forEach((bm: any) => {
+      if (bm.markets && bm.markets.length) {
+        const h2hMarket = bm.markets.find((market: any) => market.key === "h2h");
+        if (h2hMarket && h2hMarket.outcomes && h2hMarket.outcomes.length) {
+          h2hMarket.outcomes.forEach((outcome: any) => {
+            const team = outcome.name;
+            const odd = adjustOdds(outcome.price);
+            if (!oddsMap[team]) oddsMap[team] = [];
+            oddsMap[team].push(odd);
+          });
+        }
+      }
+    });
+  }
+  // Calculate average odds per team:
+  const averages: { [team: string]: number } = {};
+  for (const team in oddsMap) {
+    const sum = oddsMap[team].reduce((a, b) => a + b, 0);
+    averages[team] = Number((sum / oddsMap[team].length).toFixed(2));
+  }
+  return averages;
+}
+
+// Group events by their commence date (local date string).
 function groupEventsByDate(events: any[]) {
   return events.reduce((grouped: { [key: string]: any[] }, event) => {
     const dateStr = new Date(event.commence_time).toLocaleDateString();
@@ -67,8 +96,11 @@ export default function BettingPage() {
   const [betAmount, setBetAmount] = useState<number>(0);
   const [myBets, setMyBets] = useState<any[]>([]);
   const [loadingResult, setLoadingResult] = useState(false);
+  // For outcome selection in modal:
+  const [selectedOutcome, setSelectedOutcome] = useState<string | null>(null);
+  const [depositTxid, setDepositTxid] = useState<string | null>(null);
 
-  // Fetch sports on mount and filter to accepted sports.
+  // Fetch sports on mount and filter using acceptedSports.
   useEffect(() => {
     axios
       .get(`${ODDS_API_HOST}/v4/sports/?apiKey=${process.env.NEXT_PUBLIC_ODDS_API_KEY}`)
@@ -77,7 +109,6 @@ export default function BettingPage() {
           (sport: any) =>
             sport.active && acceptedSports.includes(sport.key)
         );
-        // Sort by the order in acceptedSports.
         filtered.sort(
           (a: any, b: any) =>
             acceptedSports.indexOf(a.key) - acceptedSports.indexOf(b.key)
@@ -96,26 +127,17 @@ export default function BettingPage() {
         `${ODDS_API_HOST}/v4/sports/${selectedSport}/odds?regions=us&markets=h2h&oddsFormat=american&apiKey=${process.env.NEXT_PUBLIC_ODDS_API_KEY}`
       )
       .then((res) => {
+        // Process each event and calculate average odds.
         const processed = res.data.map((event: any) => {
-          let houseOdd = null;
-          if (
-            event.bookmakers &&
-            event.bookmakers.length &&
-            event.bookmakers[0].markets &&
-            event.bookmakers[0].markets.length &&
-            event.bookmakers[0].markets[0].outcomes &&
-            event.bookmakers[0].markets[0].outcomes.length
-          ) {
-            houseOdd = adjustOdds(event.bookmakers[0].markets[0].outcomes[0].price);
-          }
-          return { ...event, houseOdd };
+          const averages = calculateAverageOdds(event);
+          return { ...event, avgOdds: averages };
         });
         setEvents(processed);
       })
       .catch((err) => console.error("Error fetching events:", err));
   }, [selectedSport]);
 
-  // When the bet modal is opened, load user's bets for the event.
+  // When the bet modal is shown, load existing bets for the event.
   useEffect(() => {
     async function loadMyBets() {
       if (!selectedEvent || !isConnected) return;
@@ -133,6 +155,8 @@ export default function BettingPage() {
     }
     if (betModalVisible) {
       loadMyBets();
+      // Clear any prior outcome selection.
+      setSelectedOutcome(null);
     }
   }, [betModalVisible, selectedEvent, isConnected]);
 
@@ -146,15 +170,24 @@ export default function BettingPage() {
       alert("Invalid bet amount");
       return;
     }
-    if (!selectedEvent) return;
-
-    // For demonstration: choose the first outcome.
-    const chosenOutcome =
-      selectedEvent.bookmakers[0].markets[0].outcomes[0].name || "Unknown";
-    const odds = adjustOdds(selectedEvent.bookmakers[0].markets[0].outcomes[0].price);
+    if (!selectedEvent || !selectedOutcome) {
+      alert("Please select an outcome");
+      return;
+    }
 
     try {
       const walletAddress = (await window.kasware.getAccounts())[0];
+      // Use kasware to send a transaction first, then get the txid.
+      // (Replace the following logic with your real kasware integration.)
+      const chosenTreasury = "YOUR_TREASURY_ADDRESS"; // Replace with your treasury address logic.
+      const depositTx = await window.kasware.sendKaspa(chosenTreasury, betAmount * 1e8, {
+        priorityFee: 10000,
+      });
+      const parsedTx = typeof depositTx === "string" ? JSON.parse(depositTx) : depositTx;
+      const txidString = parsedTx.id;
+      setDepositTxid(txidString);
+
+      const odds = selectedEvent.avgOdds[selectedOutcome];
       const res = await axios.post("/api/betting/place", {
         walletAddress,
         eventId: selectedEvent.id,
@@ -163,7 +196,8 @@ export default function BettingPage() {
         eventCommenceTime: selectedEvent.commence_time,
         betAmount,
         odds,
-        chosenOutcome,
+        chosenOutcome: selectedOutcome,
+        txid: txidString,
       });
       if (res.data.success) {
         setBetModalVisible(false);
@@ -174,10 +208,10 @@ export default function BettingPage() {
             eventName: formatEventTeams(selectedEvent.away_team, selectedEvent.home_team),
             betAmount,
             odds,
-            chosenOutcome,
+            chosenOutcome: selectedOutcome,
           },
         ]);
-        // Start polling for outcome after a delay.
+        // Poll for outcome after delay.
         setTimeout(() => {
           pollBetResult(res.data.betId);
         }, 5000);
@@ -217,6 +251,9 @@ export default function BettingPage() {
     (a, b) => new Date(a).getTime() - new Date(b).getTime()
   );
 
+  // Modal close handler using an "X" button
+  const closeModal = () => setBetModalVisible(false);
+
   return (
     <div className={`${montserrat.className} min-h-screen bg-black text-white p-6`}>
       {/* Header */}
@@ -255,42 +292,52 @@ export default function BettingPage() {
         <section key={dateStr} className="mb-8">
           <h2 className="text-2xl font-bold mb-4 text-white">{dateStr}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {groupedEvents[dateStr].map((event: any) => (
-              <Card
-                key={event.id}
-                className="p-4 bg-gray-800 border border-[#49EACB] cursor-pointer hover:bg-gray-700 text-white"
-                onClick={() => {
-                  setSelectedEvent(event);
-                  setBetModalVisible(true);
-                }}
-              >
-                <h3 className="text-xl font-bold">{formatEventTeams(event.away_team, event.home_team)}</h3>
-                <p className="text-sm">
-                  Commence Time: {new Date(event.commence_time).toLocaleString()}
-                </p>
-                <p className="mt-2 text-lg">
-                  House Odds:{" "}
-                  {event.houseOdd !== null
-                    ? event.houseOdd > 0
-                      ? `+${event.houseOdd}`
-                      : event.houseOdd
-                    : "N/A"}
-                </p>
-                {/* Existing bets for this event */}
-                {myBets.filter((bet) => bet.eventId === event.id).length > 0 && (
-                  <div className="mt-2 text-sm text-gray-300">
-                    <strong>Your Bets:</strong>
-                    {myBets
-                      .filter((bet) => bet.eventId === event.id)
-                      .map((bet, idx) => (
-                        <div key={idx}>
-                          {bet.betAmount} KAS at odds {bet.odds.toFixed(2)} on {bet.chosenOutcome}
-                        </div>
+            {groupedEvents[dateStr]
+              .filter((event: any) =>
+                event.sport_key === selectedSport
+              )
+              .map((event: any) => {
+                // Calculate average odds for the two outcomes.
+                const averages = calculateAverageOdds(event);
+                // Get team names and order them (for a head-to-head, assume two outcomes)
+                const teams = Object.keys(averages);
+                return (
+                  <Card
+                    key={event.id}
+                    className="p-4 bg-gray-800 border border-[#49EACB] cursor-pointer hover:bg-gray-700 text-white"
+                    onClick={() => {
+                      setSelectedEvent(event);
+                      // Reset any previous selection.
+                      setSelectedOutcome(null);
+                      setBetModalVisible(true);
+                    }}
+                  >
+                    <h3 className="text-xl font-bold">{formatEventTeams(event.away_team, event.home_team)}</h3>
+                    <p className="text-sm">
+                      Commence Time: {new Date(event.commence_time).toLocaleString()}
+                    </p>
+                    <div className="mt-2">
+                      {teams.map((team) => (
+                        <p key={team} className="text-lg">
+                          {team}: {averages[team] > 0 ? (averages[team] > 0 ? `+${averages[team]}` : averages[team]) : "N/A"}
+                        </p>
                       ))}
-                  </div>
-                )}
-              </Card>
-            ))}
+                    </div>
+                    {myBets.filter((bet) => bet.eventId === event.id).length > 0 && (
+                      <div className="mt-2 text-sm text-gray-300">
+                        <strong>Your Bets:</strong>
+                        {myBets
+                          .filter((bet) => bet.eventId === event.id)
+                          .map((bet, idx) => (
+                            <div key={idx}>
+                              {bet.betAmount} KAS at odds {bet.odds.toFixed(2)} on {bet.chosenOutcome}
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
           </div>
         </section>
       ))}
@@ -305,44 +352,62 @@ export default function BettingPage() {
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="bg-white p-6 rounded-lg w-96 text-black"
+              className="bg-gray-800 p-6 rounded-lg w-96 text-white relative"
               initial={{ scale: 0.8 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.8 }}
               transition={{ duration: 0.3 }}
             >
-              <h2 className="text-2xl mb-4">{formatEventTeams(selectedEvent.away_team, selectedEvent.home_team)}</h2>
-              <p className="mb-2">Commence Time: {new Date(selectedEvent.commence_time).toLocaleString()}</p>
-              <p className="mb-4">
-                House Odds:{" "}
-                {selectedEvent.houseOdd !== null
-                  ? selectedEvent.houseOdd > 0
-                    ? `+${selectedEvent.houseOdd}`
-                    : selectedEvent.houseOdd
-                  : "N/A"}
+              {/* Close Button (X) */}
+              <motion.button
+                className="absolute top-2 right-2 text-white"
+                onClick={closeModal}
+                whileHover={{ rotate: 90 }}
+                whileTap={{ scale: 0.9 }}
+              >
+                &#x2715;
+              </motion.button>
+              <h2 className="text-2xl mb-4">
+                {formatEventTeams(selectedEvent.away_team, selectedEvent.home_team)}
+              </h2>
+              <p className="mb-2">
+                Commence Time: {new Date(selectedEvent.commence_time).toLocaleString()}
               </p>
-              {/* Existing bets in modal */}
-              {myBets.length > 0 && (
-                <div className="mb-4 bg-gray-200 p-2 rounded">
-                  <h3 className="text-lg font-bold">Your Existing Bets</h3>
-                  {myBets.map((bet, idx) => (
-                    <div key={idx} className="text-sm">
-                      {bet.betAmount} KAS at odds {bet.odds.toFixed(2)} on {bet.chosenOutcome}
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div className="mb-4">
+                {/* Get average odds */}
+                {(() => {
+                  const averages = calculateAverageOdds(selectedEvent);
+                  return Object.keys(averages).map((team) => (
+                    <p key={team} className="text-lg">
+                      {team}: {averages[team] > 0 ? (averages[team] > 0 ? `+${averages[team]}` : averages[team]) : "N/A"}
+                    </p>
+                  ));
+                })()}
+              </div>
+              {/* Outcome selection buttons */}
+              <div className="mb-4 flex gap-4">
+                {(() => {
+                  const averages = calculateAverageOdds(selectedEvent);
+                  return Object.keys(averages).map((team) => (
+                    <Button
+                      key={team}
+                      variant={selectedOutcome === team ? "default" : "outline"}
+                      onClick={() => setSelectedOutcome(team)}
+                      className="w-full"
+                    >
+                      {team}: {averages[team] > 0 ? (averages[team] > 0 ? `+${averages[team]}` : averages[team]) : "N/A"}
+                    </Button>
+                  ));
+                })()}
+              </div>
               <input
                 type="number"
-                className="w-full p-2 mb-4"
+                className="w-full p-2 mb-4 text-black"
                 placeholder="Bet Amount (KAS)"
                 onChange={(e) => setBetAmount(Number(e.target.value))}
               />
               <Button onClick={placeBet} className="w-full bg-black text-white">
                 Place Bet
-              </Button>
-              <Button onClick={() => setBetModalVisible(false)} className="w-full mt-2 bg-black text-white">
-                Cancel
               </Button>
             </motion.div>
           </motion.div>
@@ -383,6 +448,34 @@ export default function BettingPage() {
       )}
 
       <SiteFooter />
+
+      {/* Custom slider styling, if needed */}
+      <style jsx>{`
+        .slider-custom {
+          -webkit-appearance: none;
+          width: 100%;
+          height: 10px;
+          outline: none;
+          border-radius: 5px;
+          margin: 10px 0;
+        }
+        .slider-custom::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 32px;
+          height: 32px;
+          background: url('/draggerpoint.webp') no-repeat center center;
+          background-size: contain;
+          cursor: pointer;
+        }
+        .slider-custom::-moz-range-thumb {
+          width: 32px;
+          height: 32px;
+          background: url('/draggerpoint.webp') no-repeat center center;
+          background-size: contain;
+          cursor: pointer;
+        }
+      `}</style>
     </div>
   );
 }
