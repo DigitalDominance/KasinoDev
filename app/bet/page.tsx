@@ -272,7 +272,7 @@ export default function BettingPage() {
       <header className="flex items-center justify-between mb-6">
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
           <Link href="/" className="inline-flex items-center text-[#49EACB] hover:underline">
-            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Games
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
           </Link>
         </motion.div>
         <motion.div
