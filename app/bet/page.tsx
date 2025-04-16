@@ -38,6 +38,7 @@ function adjustOdds(apiOdds: number): number {
 const acceptedSports = [
   "mma_mixed_martial_arts",
   "boxing_boxing",
+  "americanfootball_ncaaf",
   "americanfootball_nfl",
   "basketball_nba",
   "baseball_mlb",
@@ -371,17 +372,20 @@ export default function BettingPage() {
       </div>
 
       {/* Display events grouped by date */}
-      {sortedDates.map((dateStr) => (
-        <section key={dateStr} className="mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-white">{dateStr}</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {groupedEvents[dateStr]
-              // Only show events within one week of now, and for the currently selected sport.
-              .filter(
-                (event: any) =>
-                  event.sport_key === selectedSport && isWithinOneWeek(event.commence_time)
-              )
-              .map((event: any) => {
+      {sortedDates.map((dateStr) => {
+        // Filter out events beyond one week or not matching selected sport
+        const relevantEvents = groupedEvents[dateStr].filter(
+          (event: any) =>
+            event.sport_key === selectedSport && isWithinOneWeek(event.commence_time)
+        );
+        // If no relevant events remain for this date, skip rendering the section
+        if (relevantEvents.length === 0) return null;
+
+        return (
+          <section key={dateStr} className="mb-8">
+            <h2 className="text-2xl font-bold mb-4 text-white">{dateStr}</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              {relevantEvents.map((event: any) => {
                 const over = isEventOver(event, eventResults);
                 const borderColor = over ? "border-red-500" : "border-[#49EACB]";
                 return (
@@ -409,7 +413,6 @@ export default function BettingPage() {
                             : "Pending"}
                         </p>
                       ) : (
-                        // If not over, show average odds
                         Object.keys(event.avgOdds || {}).map((team) => (
                           <p key={team} className="text-lg">
                             {team}:{" "}
@@ -438,9 +441,10 @@ export default function BettingPage() {
                   </Card>
                 );
               })}
-          </div>
-        </section>
-      ))}
+            </div>
+          </section>
+        );
+      })}
 
       {/* Bet Modal */}
       <AnimatePresence>
