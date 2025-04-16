@@ -23,14 +23,13 @@ const montserrat = Montserrat({
 const HOUSE_EDGE_PERCENT = 5;
 const ODDS_API_HOST = "https://api.the-odds-api.com";
 
-// Helper to adjust odds by reducing payout potential (simplified conversion) and then round to 2 decimals.
+// Helper: Adjust odds by reducing the potential payout by 5% and round to 2 decimals.
 function adjustOdds(apiOdds: number): number {
   const adjusted = apiOdds * (1 - HOUSE_EDGE_PERCENT / 100);
   return Number(adjusted.toFixed(2));
 }
 
-// Preselect the sports we want (popular US sports and then soccer)
-// Order: MMA, Boxing, Football (college), NFL, NBA, MLB, Tennis, Soccer
+// Accepted sports in our desired order.
 const acceptedSports = [
   "mma_mixed_martial_arts",
   "boxing_boxing",
@@ -42,9 +41,19 @@ const acceptedSports = [
   "soccer_usa_mls",
 ];
 
-// Helper: Replace "@" with "vs" when rendering event teams.
+// Helper: Format team names with "vs" instead of "@".
 function formatEventTeams(away: string, home: string) {
   return `${away} vs ${home}`;
+}
+
+// Group events by the day (using local date string).
+function groupEventsByDate(events: any[]) {
+  return events.reduce((grouped: { [key: string]: any[] }, event) => {
+    const dateStr = new Date(event.commence_time).toLocaleDateString();
+    if (!grouped[dateStr]) grouped[dateStr] = [];
+    grouped[dateStr].push(event);
+    return grouped;
+  }, {});
 }
 
 export default function BettingPage() {
@@ -59,29 +68,27 @@ export default function BettingPage() {
   const [myBets, setMyBets] = useState<any[]>([]);
   const [loadingResult, setLoadingResult] = useState(false);
 
-  // Fetch sports from the API on mount then filter to only our accepted list.
+  // Fetch sports on mount and filter to accepted sports.
   useEffect(() => {
     axios
       .get(`${ODDS_API_HOST}/v4/sports/?apiKey=${process.env.NEXT_PUBLIC_ODDS_API_KEY}`)
       .then((res) => {
-        // Filter to those sports that are active and in our accepted list.
         const filtered = res.data.filter(
           (sport: any) =>
             sport.active && acceptedSports.includes(sport.key)
         );
-        // Sort according to our defined order:
+        // Sort by the order in acceptedSports.
         filtered.sort(
           (a: any, b: any) =>
             acceptedSports.indexOf(a.key) - acceptedSports.indexOf(b.key)
         );
         setSports(filtered);
-        // Set the initially selected sport to the first one in our list.
         if (filtered.length > 0) setSelectedSport(filtered[0].key);
       })
       .catch((err) => console.error("Error fetching sports:", err));
   }, []);
 
-  // Fetch events for the selected sport when it changes.
+  // Fetch events for the selected sport.
   useEffect(() => {
     if (!selectedSport) return;
     axios
@@ -89,9 +96,7 @@ export default function BettingPage() {
         `${ODDS_API_HOST}/v4/sports/${selectedSport}/odds?regions=us&markets=h2h&oddsFormat=american&apiKey=${process.env.NEXT_PUBLIC_ODDS_API_KEY}`
       )
       .then((res) => {
-        // For each event, pick our house odd from the first bookmaker & market (assumes that will be our "house" odd).
         const processed = res.data.map((event: any) => {
-          // Pick the first outcome's price as the house odd.
           let houseOdd = null;
           if (
             event.bookmakers &&
@@ -110,7 +115,7 @@ export default function BettingPage() {
       .catch((err) => console.error("Error fetching events:", err));
   }, [selectedSport]);
 
-  // When bet modal is shown, load any bets the user has placed on this event.
+  // When the bet modal is opened, load user's bets for the event.
   useEffect(() => {
     async function loadMyBets() {
       if (!selectedEvent || !isConnected) return;
@@ -131,7 +136,7 @@ export default function BettingPage() {
     }
   }, [betModalVisible, selectedEvent, isConnected]);
 
-  // Function to place a bet on an event.
+  // Place bet function.
   const placeBet = async () => {
     if (!isConnected) {
       alert("Please connect your wallet");
@@ -143,7 +148,7 @@ export default function BettingPage() {
     }
     if (!selectedEvent) return;
 
-    // For demonstration, select the first available outcome from the first bookmaker.
+    // For demonstration: choose the first outcome.
     const chosenOutcome =
       selectedEvent.bookmakers[0].markets[0].outcomes[0].name || "Unknown";
     const odds = adjustOdds(selectedEvent.bookmakers[0].markets[0].outcomes[0].price);
@@ -162,7 +167,6 @@ export default function BettingPage() {
       });
       if (res.data.success) {
         setBetModalVisible(false);
-        // Update my bets state with the new bet.
         setMyBets((prev) => [
           ...prev,
           {
@@ -173,7 +177,7 @@ export default function BettingPage() {
             chosenOutcome,
           },
         ]);
-        // Start polling for the payout outcome
+        // Start polling for outcome after a delay.
         setTimeout(() => {
           pollBetResult(res.data.betId);
         }, 5000);
@@ -186,7 +190,7 @@ export default function BettingPage() {
     }
   };
 
-  // Poll for the bet result.
+  // Poll for bet outcome.
   const pollBetResult = async (betId: string) => {
     setLoadingResult(true);
     try {
@@ -206,6 +210,12 @@ export default function BettingPage() {
       setLoadingResult(false);
     }
   };
+
+  // Group events by commence date.
+  const groupedEvents = groupEventsByDate(events);
+  const sortedDates = Object.keys(groupedEvents).sort(
+    (a, b) => new Date(a).getTime() - new Date(b).getTime()
+  );
 
   return (
     <div className={`${montserrat.className} min-h-screen bg-black text-white p-6`}>
@@ -227,50 +237,60 @@ export default function BettingPage() {
         </motion.div>
       </header>
 
-      {/* Sports Sections */}
-      {sports.map((sport) => (
-        <section key={sport.key} className="mb-8">
-          <h2 className="text-2xl font-bold mb-4 text-white">{sport.title}</h2>
+      {/* Top category buttons */}
+      <div className="flex gap-4 mb-6">
+        {sports.map((sport) => (
+          <Button
+            key={sport.key}
+            onClick={() => setSelectedSport(sport.key)}
+            className={selectedSport === sport.key ? "bg-[#49EACB] text-black" : "bg-gray-800"}
+          >
+            {sport.title}
+          </Button>
+        ))}
+      </div>
+
+      {/* Sections grouped by Commence Date */}
+      {sortedDates.map((dateStr) => (
+        <section key={dateStr} className="mb-8">
+          <h2 className="text-2xl font-bold mb-4 text-white">{dateStr}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {events
-              .filter((event) => event.sport_key === sport.key || (sport.key === selectedSport))
-              .map((event) => (
-                <Card
-                  key={event.id}
-                  className="p-4 bg-gray-800 border border-[#49EACB] cursor-pointer hover:bg-gray-700 text-white"
-                  onClick={() => {
-                    setSelectedEvent(event);
-                    setBetModalVisible(true);
-                  }}
-                >
-                  <h3 className="text-xl font-bold">
-                    {formatEventTeams(event.away_team, event.home_team)}
-                  </h3>
-                  <p className="text-sm">
-                    Commence Time: {new Date(event.commence_time).toLocaleString()}
-                  </p>
-                  {/* Show only our house odd rounded to 2 decimals */}
-                  <p className="mt-2 text-lg">
-                    House Odds:{" "}
-                    {event.houseOdd !== null
-                      ? (event.houseOdd > 0 ? `+${event.houseOdd}` : event.houseOdd)
-                      : "N/A"}
-                  </p>
-                  {/* Display the user’s bets for this event, if any */}
-                  {myBets.filter((bet) => bet.eventId === event.id).length > 0 && (
-                    <div className="mt-2 text-sm text-gray-300">
-                      <strong>Your Bets:</strong>
-                      {myBets
-                        .filter((bet) => bet.eventId === event.id)
-                        .map((bet, idx) => (
-                          <div key={idx}>
-                            {bet.betAmount} KAS at odds {bet.odds.toFixed(2)} on {bet.chosenOutcome}
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                </Card>
-              ))}
+            {groupedEvents[dateStr].map((event: any) => (
+              <Card
+                key={event.id}
+                className="p-4 bg-gray-800 border border-[#49EACB] cursor-pointer hover:bg-gray-700 text-white"
+                onClick={() => {
+                  setSelectedEvent(event);
+                  setBetModalVisible(true);
+                }}
+              >
+                <h3 className="text-xl font-bold">{formatEventTeams(event.away_team, event.home_team)}</h3>
+                <p className="text-sm">
+                  Commence Time: {new Date(event.commence_time).toLocaleString()}
+                </p>
+                <p className="mt-2 text-lg">
+                  House Odds:{" "}
+                  {event.houseOdd !== null
+                    ? event.houseOdd > 0
+                      ? `+${event.houseOdd}`
+                      : event.houseOdd
+                    : "N/A"}
+                </p>
+                {/* Existing bets for this event */}
+                {myBets.filter((bet) => bet.eventId === event.id).length > 0 && (
+                  <div className="mt-2 text-sm text-gray-300">
+                    <strong>Your Bets:</strong>
+                    {myBets
+                      .filter((bet) => bet.eventId === event.id)
+                      .map((bet, idx) => (
+                        <div key={idx}>
+                          {bet.betAmount} KAS at odds {bet.odds.toFixed(2)} on {bet.chosenOutcome}
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </Card>
+            ))}
           </div>
         </section>
       ))}
@@ -291,19 +311,17 @@ export default function BettingPage() {
               exit={{ scale: 0.8 }}
               transition={{ duration: 0.3 }}
             >
-              <h2 className="text-2xl mb-4">
-                {formatEventTeams(selectedEvent.away_team, selectedEvent.home_team)}
-              </h2>
-              <p className="mb-2">
-                Commence Time: {new Date(selectedEvent.commence_time).toLocaleString()}
-              </p>
+              <h2 className="text-2xl mb-4">{formatEventTeams(selectedEvent.away_team, selectedEvent.home_team)}</h2>
+              <p className="mb-2">Commence Time: {new Date(selectedEvent.commence_time).toLocaleString()}</p>
               <p className="mb-4">
                 House Odds:{" "}
                 {selectedEvent.houseOdd !== null
-                  ? (selectedEvent.houseOdd > 0 ? `+${selectedEvent.houseOdd}` : selectedEvent.houseOdd)
+                  ? selectedEvent.houseOdd > 0
+                    ? `+${selectedEvent.houseOdd}`
+                    : selectedEvent.houseOdd
                   : "N/A"}
               </p>
-              {/* Render user's existing bets for this event */}
+              {/* Existing bets in modal */}
               {myBets.length > 0 && (
                 <div className="mb-4 bg-gray-200 p-2 rounded">
                   <h3 className="text-lg font-bold">Your Existing Bets</h3>
