@@ -38,7 +38,6 @@ function adjustOdds(apiOdds: number): number {
 const acceptedSports = [
   "mma_mixed_martial_arts",
   "boxing_boxing",
-  "americanfootball_ncaaf",
   "americanfootball_nfl",
   "basketball_nba",
   "baseball_mlb",
