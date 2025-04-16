@@ -15,6 +15,7 @@ import { Montserrat } from "next/font/google";
 import { useWallet } from "@/contexts/WalletContext";
 import { v4 as uuidv4 } from "uuid";
 
+// Font
 const montserrat = Montserrat({
   weight: "700",
   subsets: ["latin"],
@@ -97,9 +98,16 @@ function determineWinner(scores: any[]): { winner: string; scoreDisplay: string 
   return { winner, scoreDisplay };
 }
 
-// Check if an event is over by checking if its results have been fetched and if 'completed' is true.
+// Check if an event has completed results in the scores data.
 function isEventOver(event: any, eventResults: { [id: string]: any }): boolean {
   return eventResults[event.id] && eventResults[event.id].completed === true;
+}
+
+// Only show events that start within 7 days from now.
+function isWithinOneWeek(commenceTime: string | Date): boolean {
+  const eventTime = new Date(commenceTime).getTime();
+  const now = Date.now();
+  return eventTime <= now + 7 * 24 * 60 * 60 * 1000;
 }
 
 export default function BettingPage() {
@@ -145,6 +153,7 @@ export default function BettingPage() {
         `${ODDS_API_HOST}/v4/sports/${selectedSport}/odds?regions=us&markets=h2h&oddsFormat=american&apiKey=${process.env.NEXT_PUBLIC_ODDS_API_KEY}`
       )
       .then((res) => {
+        // For each event, compute average odds.
         const processed = res.data.map((event: any) => {
           const averages = calculateAverageOdds(event);
           return { ...event, avgOdds: averages };
@@ -154,12 +163,9 @@ export default function BettingPage() {
       .catch((err) => console.error("Error fetching events:", err));
   }, [selectedSport]);
 
-  // Monitor events: For events not yet having results, fetch scores to determine if they're completed.
+  // Fetch scores to see if events are completed. Only if we haven't fetched them yet.
   useEffect(() => {
-    const eventsNeedingResults = events.filter((event: any) => {
-      // Only fetch if we have not fetched a result for this event.
-      return !eventResults[event.id];
-    });
+    const eventsNeedingResults = events.filter((event: any) => !eventResults[event.id]);
     if (eventsNeedingResults.length > 0) {
       const eventIds = eventsNeedingResults.map((e: any) => e.id).join(",");
       axios
@@ -178,7 +184,7 @@ export default function BettingPage() {
     }
   }, [events, selectedSport, eventResults]);
 
-  // When the bet modal is open, load any existing bets for the selected event.
+  // When the bet modal is open, load existing bets for the event.
   useEffect(() => {
     async function loadMyBets() {
       if (!selectedEvent || !isConnected) return;
@@ -215,12 +221,11 @@ export default function BettingPage() {
       alert("Please select an outcome");
       return;
     }
-    // Prevent bet placement if the event is over.
+    // If event is over, do not allow new bets.
     if (isEventOver(selectedEvent, eventResults)) {
       alert("This event is over. You cannot place a bet.");
       return;
     }
-
     try {
       const accounts = await window.kasware.getAccounts();
       const currentWalletAddress = accounts[0];
@@ -228,13 +233,12 @@ export default function BettingPage() {
         alert("No wallet address found");
         return;
       }
-      // Choose treasury address.
+      // Send deposit with kasware.
       const chosenTreasury = Math.random() < 0.5 ? treasuryAddressT1 : treasuryAddressT2;
       if (!chosenTreasury) {
         alert("Treasury address not configured");
         return;
       }
-      // Send deposit using kasware.
       const depositTx = await window.kasware.sendKaspa(chosenTreasury, betAmount * 1e8, {
         priorityFee: 10000,
       });
@@ -242,7 +246,6 @@ export default function BettingPage() {
       const txidString = parsedTx.id;
       setDepositTxid(txidString);
 
-      // Post new bet to the backend.
       const odds = selectedEvent.avgOdds[selectedOutcome];
       const result = await axios.post(`${apiUrl}/betting/place`, {
         walletAddress: currentWalletAddress,
@@ -267,7 +270,7 @@ export default function BettingPage() {
             chosenOutcome: selectedOutcome,
           },
         ]);
-        // Poll for the bet outcome after a short delay.
+        // Poll for outcome after a delay.
         setTimeout(() => {
           pollBetResult(result.data.betId);
         }, 5000);
@@ -280,7 +283,7 @@ export default function BettingPage() {
     }
   };
 
-  // Poll for bet outcome.
+  // Poll for the outcome of a bet.
   const pollBetResult = async (betId: string) => {
     setLoadingResult(true);
     try {
@@ -307,16 +310,21 @@ export default function BettingPage() {
     (a, b) => new Date(a).getTime() - new Date(b).getTime()
   );
 
-  // Close modal handler.
+  // Generate display for an event if it's over.
+  function getEventResultDisplay(event: any) {
+    const scoreData = eventResults[event.id];
+    if (scoreData && scoreData.completed && scoreData.scores && scoreData.scores.length >= 2) {
+      const { scoreDisplay } = determineWinner(scoreData.scores);
+      return scoreDisplay;
+    }
+    return "Result Unavailable";
+  }
+
+  // Close the modal.
   const closeModal = () => setBetModalVisible(false);
 
   return (
     <div className={`${montserrat.className} min-h-screen bg-black text-white p-6`}>
-      {/* Banner */}
-      <div className="mb-6">
-        <Image src={bannerSrc} alt="Banner" width={1200} height={200} className="w-full object-cover" />
-      </div>
-
       {/* Header */}
       <header className="flex items-center justify-between mb-6">
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
@@ -324,11 +332,27 @@ export default function BettingPage() {
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
           </Link>
         </motion.div>
-        <motion.div className="flex items-center gap-4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5 }}>
+        <motion.div
+          className="flex items-center gap-4"
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5 }}
+        >
           <XPDisplay />
           <WalletConnection />
         </motion.div>
       </header>
+
+      {/* Banner below the nav, above category buttons */}
+      <div className="mb-6">
+        <Image
+          src={bannerSrc}
+          alt="Banner"
+          width={1200}
+          height={200}
+          className="w-full object-cover"
+        />
+      </div>
 
       {/* Top category buttons */}
       <div className="flex gap-4 mb-6">
@@ -353,11 +377,13 @@ export default function BettingPage() {
           <h2 className="text-2xl font-bold mb-4 text-white">{dateStr}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             {groupedEvents[dateStr]
-              .filter((event: any) => event.sport_key === selectedSport)
+              // Only show events within one week of now, and for the currently selected sport.
+              .filter(
+                (event: any) =>
+                  event.sport_key === selectedSport && isWithinOneWeek(event.commence_time)
+              )
               .map((event: any) => {
-                const teams = Object.keys(event.avgOdds || {});
                 const over = isEventOver(event, eventResults);
-                // Change border color: green (#49EACB) if not over, red if over.
                 const borderColor = over ? "border-red-500" : "border-[#49EACB]";
                 return (
                   <Card
@@ -369,27 +395,34 @@ export default function BettingPage() {
                       setBetModalVisible(true);
                     }}
                   >
-                    <h3 className="text-xl font-bold">{formatEventTeams(event.away_team, event.home_team)}</h3>
+                    <h3 className="text-xl font-bold">
+                      {formatEventTeams(event.away_team, event.home_team)}
+                    </h3>
                     <p className="text-sm">
                       Commence Time: {new Date(event.commence_time).toLocaleString()}
                     </p>
                     <div className="mt-2">
                       {over ? (
-                        // If the event is over, show result details.
                         <p className="text-lg font-semibold">
-                          Result: {eventResults[event.id] && eventResults[event.id].completed
+                          Result:{" "}
+                          {eventResults[event.id] && eventResults[event.id].completed
                             ? getEventResultDisplay(event)
                             : "Pending"}
                         </p>
                       ) : (
-                        // Otherwise, show average odds.
-                        teams.map((team) => (
+                        // If not over, show average odds
+                        Object.keys(event.avgOdds || {}).map((team) => (
                           <p key={team} className="text-lg">
-                            {team}: {event.avgOdds[team] > 0 ? `+${event.avgOdds[team]}` : event.avgOdds[team]}
+                            {team}:{" "}
+                            {event.avgOdds[team] > 0
+                              ? `+${event.avgOdds[team]}`
+                              : event.avgOdds[team]}
                           </p>
                         ))
                       )}
                     </div>
+
+                    {/* Show user's existing bets for this event, if any */}
                     {myBets.filter((bet: any) => bet.eventId === event.id).length > 0 && (
                       <div className="mt-2 text-sm text-gray-300">
                         <strong>Your Bets:</strong>
@@ -397,7 +430,8 @@ export default function BettingPage() {
                           .filter((bet: any) => bet.eventId === event.id)
                           .map((bet: any, idx: number) => (
                             <div key={idx}>
-                              {bet.betAmount} KAS at odds {bet.odds.toFixed(2)} on {bet.chosenOutcome}
+                              {bet.betAmount} KAS at odds {bet.odds.toFixed(2)} on{" "}
+                              {bet.chosenOutcome}
                             </div>
                           ))}
                       </div>
@@ -434,10 +468,14 @@ export default function BettingPage() {
               >
                 &times;
               </motion.button>
-              <h2 className="text-2xl mb-4 text-white">{formatEventTeams(selectedEvent.away_team, selectedEvent.home_team)}</h2>
+
+              <h2 className="text-2xl mb-4 text-white">
+                {formatEventTeams(selectedEvent.away_team, selectedEvent.home_team)}
+              </h2>
               <p className="mb-2 text-white">
                 Commence Time: {new Date(selectedEvent.commence_time).toLocaleString()}
               </p>
+
               {depositTxid && (
                 <p className="mb-4 text-sm text-white break-words">
                   Deposit TXID:{" "}
@@ -457,7 +495,7 @@ export default function BettingPage() {
                   <p className="text-lg text-white">
                     Result:{" "}
                     {eventResults[selectedEvent.id] && eventResults[selectedEvent.id].completed
-                      ? getEventResultDisplay(selectedEvent)
+                      ? determineWinner(eventResults[selectedEvent.id].scores).scoreDisplay
                       : "Pending"}
                   </p>
                 </div>
@@ -493,7 +531,10 @@ export default function BettingPage() {
                       onChange={(e) => setBetAmount(Number(e.target.value))}
                     />
                   </div>
-                  <Button onClick={placeBet} className="w-full bg-[#49EACB] text-black font-bold hover:bg-[#49EACB]/80">
+                  <Button
+                    onClick={placeBet}
+                    className="w-full bg-[#49EACB] text-black font-bold hover:bg-[#49EACB]/80"
+                  >
                     Place Bet
                   </Button>
                 </>
@@ -516,7 +557,9 @@ export default function BettingPage() {
             {resultState.win ? (
               <div>
                 <h2 className="text-xl font-bold">Congratulations!</h2>
-                <p>You won on {resultState.eventName} with a payout of {resultState.winAmount} KAS.</p>
+                <p>
+                  You won on {resultState.eventName} with a payout of {resultState.winAmount} KAS.
+                </p>
               </div>
             ) : (
               <div>
