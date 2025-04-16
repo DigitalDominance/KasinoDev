@@ -37,6 +37,17 @@ const iconMap: { [key: string]: string } = {
   soccer_usa_mls: "/kasinosoccericon.webp",
 };
 
+// Display names for acronym sports
+const displayNameMap: { [key: string]: string } = {
+  mma_mixed_martial_arts: "Mixed Martial Arts",
+  boxing_boxing: "Boxing",
+  americanfootball_nfl: "National Football League",
+  basketball_nba: "National Basketball Association",
+  baseball_mlb: "Major League Baseball",
+  tennis_atp_us_open: "Tennis (US Open)",
+  soccer_usa_mls: "Major League Soccer",
+};
+
 // Helper: Adjust odds and round to two decimals.
 function adjustOdds(apiOdds: number): number {
   const adjusted = apiOdds * (1 - HOUSE_EDGE_PERCENT / 100);
@@ -360,8 +371,8 @@ export default function BettingPage() {
         {sports.map((sport) => {
           const isSelected = selectedSport === sport.key;
           const btnClass = isSelected
-            ? "bg-[#49EACB] text-black px-8 py-4 text-2xl"
-            : "bg-gray-800 text-white px-8 py-4 text-2xl";
+            ? "bg-[#49EACB] text-black px-10 py-5 text-3xl"
+            : "bg-gray-800 text-white px-10 py-5 text-3xl";
           return (
             <Button
               key={sport.key}
@@ -385,10 +396,20 @@ export default function BettingPage() {
         })}
       </div>
 
-      {/* Sport heading */}
-      <h1 className="text-4xl font-bold mb-4 text-[#49EACB]">
-        {sports.find((s) => s.key === selectedSport)?.title}
-      </h1>
+      {/* Sport heading with animation */}
+      <AnimatePresence exitBeforeEnter>
+        <motion.h1
+          key={selectedSport}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.5 }}
+          className="text-4xl font-bold mb-4 text-[#49EACB]"
+        >
+          {displayNameMap[selectedSport] ||
+            sports.find((s) => s.key === selectedSport)?.title}
+        </motion.h1>
+      </AnimatePresence>
 
       {/* Display events grouped by date with loading animation */}
       <AnimatePresence exitBeforeEnter>
