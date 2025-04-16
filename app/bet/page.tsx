@@ -28,17 +28,25 @@ const treasuryAddressT1 = process.env.NEXT_PUBLIC_TREASURY_ADDRESS_T1;
 const treasuryAddressT2 = process.env.NEXT_PUBLIC_TREASURY_ADDRESS_T2;
 const apiUrl = "https://kasino-backend-4818b4b69870.herokuapp.com/api";
 
+// Icon mapping for categories
+const iconMap: { [key: string]: string } = {
+  mma_mixed_martial_arts: "/kasinommaicon.webp",
+  boxing_boxing: "/kasinoboxingicon.webp",
+  basketball_nba: "/kasinobasketballicon.webp",
+  baseball_mlb: "/kasinobaseballicon.webp",
+  soccer_usa_mls: "/kasinosoccericon.webp",
+};
+
 // Helper: Adjust odds and round to two decimals.
 function adjustOdds(apiOdds: number): number {
   const adjusted = apiOdds * (1 - HOUSE_EDGE_PERCENT / 100);
   return Number(adjusted.toFixed(2));
 }
 
-// Accepted sports in desired order.
+// Accepted sports in desired order (removed ncaaf)
 const acceptedSports = [
   "mma_mixed_martial_arts",
   "boxing_boxing",
-  "americanfootball_ncaaf",
   "americanfootball_nfl",
   "basketball_nba",
   "baseball_mlb",
@@ -133,12 +141,9 @@ export default function BettingPage() {
     axios
       .get(`${ODDS_API_HOST}/v4/sports/?apiKey=${process.env.NEXT_PUBLIC_ODDS_API_KEY}`)
       .then((res) => {
-        const filtered = res.data.filter(
-          (sport: any) => sport.active && acceptedSports.includes(sport.key)
-        );
-        filtered.sort(
-          (a: any, b: any) => acceptedSports.indexOf(a.key) - acceptedSports.indexOf(b.key)
-        );
+        const filtered = res.data
+          .filter((sport: any) => sport.active && acceptedSports.includes(sport.key))
+          .sort((a: any, b: any) => acceptedSports.indexOf(a.key) - acceptedSports.indexOf(b.key));
         setSports(filtered);
         if (filtered.length > 0) setSelectedSport(filtered[0].key);
       })
@@ -153,7 +158,6 @@ export default function BettingPage() {
         `${ODDS_API_HOST}/v4/sports/${selectedSport}/odds?regions=us&markets=h2h&oddsFormat=american&apiKey=${process.env.NEXT_PUBLIC_ODDS_API_KEY}`
       )
       .then((res) => {
-        // For each event, compute average odds.
         const processed = res.data.map((event: any) => {
           const averages = calculateAverageOdds(event);
           return { ...event, avgOdds: averages };
@@ -163,7 +167,7 @@ export default function BettingPage() {
       .catch((err) => console.error("Error fetching events:", err));
   }, [selectedSport]);
 
-  // Fetch scores to see if events are completed. Only if we haven't fetched them yet.
+  // Fetch scores to see if events are completed.
   useEffect(() => {
     const eventsNeedingResults = events.filter((event: any) => !eventResults[event.id]);
     if (eventsNeedingResults.length > 0) {
@@ -221,7 +225,6 @@ export default function BettingPage() {
       alert("Please select an outcome");
       return;
     }
-    // If event is over, do not allow new bets.
     if (isEventOver(selectedEvent, eventResults)) {
       alert("This event is over. You cannot place a bet.");
       return;
@@ -233,7 +236,6 @@ export default function BettingPage() {
         alert("No wallet address found");
         return;
       }
-      // Send deposit with kasware.
       const chosenTreasury = Math.random() < 0.5 ? treasuryAddressT1 : treasuryAddressT2;
       if (!chosenTreasury) {
         alert("Treasury address not configured");
@@ -270,7 +272,6 @@ export default function BettingPage() {
             chosenOutcome: selectedOutcome,
           },
         ]);
-        // Poll for outcome after a delay.
         setTimeout(() => {
           pollBetResult(result.data.betId);
         }, 5000);
@@ -356,29 +357,45 @@ export default function BettingPage() {
 
       {/* Top category buttons */}
       <div className="flex gap-4 mb-6">
-        {sports.map((sport) => (
-          <Button
-            key={sport.key}
-            onClick={() => setSelectedSport(sport.key)}
-            className={
-              selectedSport === sport.key
-                ? "bg-[#49EACB] text-black"
-                : "bg-gray-800 text-white"
-            }
-          >
-            {sport.title}
-          </Button>
-        ))}
+        {sports.map((sport) => {
+          const isSelected = selectedSport === sport.key;
+          const btnClass = isSelected
+            ? "bg-[#49EACB] text-black px-6 py-3 text-lg"
+            : "bg-gray-800 text-white px-6 py-3 text-lg";
+          return (
+            <Button
+              key={sport.key}
+              onClick={() => setSelectedSport(sport.key)}
+              className={btnClass}
+            >
+              <span className="flex items-center">
+                {sport.title}
+                {iconMap[sport.key] && (
+                  <Image
+                    src={iconMap[sport.key]}
+                    alt={`${sport.title} icon`}
+                    width={24}
+                    height={24}
+                    className="ml-2"
+                  />
+                )}
+              </span>
+            </Button>
+          );
+        })}
       </div>
+
+      {/* Sport heading */}
+      <h1 className="text-3xl font-bold mb-4 text-[#49EACB]">
+        {sports.find((s) => s.key === selectedSport)?.title}
+      </h1>
 
       {/* Display events grouped by date */}
       {sortedDates.map((dateStr) => {
-        // Filter out events beyond one week or not matching selected sport
         const relevantEvents = groupedEvents[dateStr].filter(
           (event: any) =>
             event.sport_key === selectedSport && isWithinOneWeek(event.commence_time)
         );
-        // If no relevant events remain for this date, skip rendering the section
         if (relevantEvents.length === 0) return null;
 
         return (
@@ -424,7 +441,6 @@ export default function BettingPage() {
                       )}
                     </div>
 
-                    {/* Show user's existing bets for this event, if any */}
                     {myBets.filter((bet: any) => bet.eventId === event.id).length > 0 && (
                       <div className="mt-2 text-sm text-gray-300">
                         <strong>Your Bets:</strong>
@@ -462,7 +478,6 @@ export default function BettingPage() {
               exit={{ scale: 0.8 }}
               transition={{ duration: 0.3 }}
             >
-              {/* Close (X) Button */}
               <motion.button
                 className="absolute top-3 right-3 text-[#49EACB]"
                 onClick={closeModal}
