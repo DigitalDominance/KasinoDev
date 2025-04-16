@@ -146,7 +146,7 @@ export default function BettingPage() {
       try {
         const accounts = await window.kasware.getAccounts();
         const currentWalletAddress = accounts[0];
-        const res = await axios.get("/api/betting/myBets", {
+        const res = await axios.get("https://kasino-backend-4818b4b69870.herokuapp.com/api/betting/myBets", {
           params: { walletAddress: currentWalletAddress, eventId: selectedEvent.id },
         });
         if (res.data.success) {
@@ -200,7 +200,7 @@ export default function BettingPage() {
 
       // Post to backend
       const odds = selectedEvent.avgOdds[selectedOutcome];
-      const result = await axios.post("/api/betting/place", {
+      const result = await axios.post("https://kasino-backend-4818b4b69870.herokuapp.com/api/betting/place", {
         walletAddress: currentWalletAddress,
         eventId: selectedEvent.id,
         sportKey: selectedSport,
@@ -240,7 +240,7 @@ export default function BettingPage() {
   const pollBetResult = async (betId: string) => {
     setLoadingResult(true);
     try {
-      const res = await axios.post("/api/betting/payout", { betId });
+      const res = await axios.post("https://kasino-backend-4818b4b69870.herokuapp.com/api/betting/payout", { betId });
       if (res.data.success) {
         setResultState({
           eventName: res.data.bet.eventName,
