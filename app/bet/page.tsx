@@ -15,7 +15,6 @@ import { Montserrat } from "next/font/google";
 import { useWallet } from "@/contexts/WalletContext";
 import { v4 as uuidv4 } from "uuid";
 
-// Font
 const montserrat = Montserrat({
   weight: "700",
   subsets: ["latin"],
@@ -28,13 +27,13 @@ const treasuryAddressT1 = process.env.NEXT_PUBLIC_TREASURY_ADDRESS_T1;
 const treasuryAddressT2 = process.env.NEXT_PUBLIC_TREASURY_ADDRESS_T2;
 const apiUrl = "https://kasino-backend-4818b4b69870.herokuapp.com/api";
 
-// Helper: Adjust odds and round to two decimals
+// Helper: Adjust odds and round to two decimals.
 function adjustOdds(apiOdds: number): number {
   const adjusted = apiOdds * (1 - HOUSE_EDGE_PERCENT / 100);
   return Number(adjusted.toFixed(2));
 }
 
-// The accepted sports in your desired order
+// Accepted sports in desired order.
 const acceptedSports = [
   "mma_mixed_martial_arts",
   "boxing_boxing",
@@ -46,12 +45,12 @@ const acceptedSports = [
   "soccer_usa_mls",
 ];
 
-// Format "TeamA vs TeamB" for display
+// Format team names as "Team A vs Team B"
 function formatEventTeams(away: string, home: string) {
   return `${away} vs ${home}`;
 }
 
-// Calculate average odds for each outcome across all h2h bookmakers
+// Calculate average odds for each outcome across all h2h bookmakers.
 function calculateAverageOdds(event: any): { [team: string]: number } {
   const oddsMap: { [team: string]: number[] } = {};
   if (event.bookmakers && event.bookmakers.length) {
@@ -69,7 +68,6 @@ function calculateAverageOdds(event: any): { [team: string]: number } {
       }
     });
   }
-  // Compute average
   const averages: { [team: string]: number } = {};
   for (const team in oddsMap) {
     const sum = oddsMap[team].reduce((a, b) => a + b, 0);
@@ -79,7 +77,7 @@ function calculateAverageOdds(event: any): { [team: string]: number } {
   return averages;
 }
 
-// Group events by their local date
+// Group events by their local date string.
 function groupEventsByDate(events: any[]) {
   return events.reduce((grouped: { [key: string]: any[] }, event) => {
     const dateStr = new Date(event.commence_time).toLocaleDateString();
@@ -89,11 +87,27 @@ function groupEventsByDate(events: any[]) {
   }, {});
 }
 
+// Determine winner based on scores (assumes head-to-head with exactly two outcomes).
+function determineWinner(scores: any[]): { winner: string; scoreDisplay: string } {
+  if (!scores || scores.length < 2) return { winner: "", scoreDisplay: "" };
+  const score1 = parseFloat(scores[0].score);
+  const score2 = parseFloat(scores[1].score);
+  const winner = score1 > score2 ? scores[0].name : scores[1].name;
+  const scoreDisplay = `${scores[0].name} ${scores[0].score} - ${scores[1].score} ${scores[1].name}`;
+  return { winner, scoreDisplay };
+}
+
+// Check if an event is over by checking if its results have been fetched and if 'completed' is true.
+function isEventOver(event: any, eventResults: { [id: string]: any }): boolean {
+  return eventResults[event.id] && eventResults[event.id].completed === true;
+}
+
 export default function BettingPage() {
   const { isConnected, balance } = useWallet();
   const [sports, setSports] = useState<any[]>([]);
   const [selectedSport, setSelectedSport] = useState<string>("mma_mixed_martial_arts");
   const [events, setEvents] = useState<any[]>([]);
+  const [eventResults, setEventResults] = useState<{ [id: string]: any }>({});
   const [resultState, setResultState] = useState<{ eventName: string; winAmount: number; win: boolean } | null>(null);
   const [betModalVisible, setBetModalVisible] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
@@ -103,18 +117,19 @@ export default function BettingPage() {
   const [selectedOutcome, setSelectedOutcome] = useState<string | null>(null);
   const [depositTxid, setDepositTxid] = useState<string | null>(null);
 
-  // Fetch sports on mount
+  // Banner image source from public folder.
+  const bannerSrc = "/placeholder.svg";
+
+  // Fetch sports on mount.
   useEffect(() => {
     axios
       .get(`${ODDS_API_HOST}/v4/sports/?apiKey=${process.env.NEXT_PUBLIC_ODDS_API_KEY}`)
       .then((res) => {
         const filtered = res.data.filter(
-          (sport: any) =>
-            sport.active && acceptedSports.includes(sport.key)
+          (sport: any) => sport.active && acceptedSports.includes(sport.key)
         );
         filtered.sort(
-          (a: any, b: any) =>
-            acceptedSports.indexOf(a.key) - acceptedSports.indexOf(b.key)
+          (a: any, b: any) => acceptedSports.indexOf(a.key) - acceptedSports.indexOf(b.key)
         );
         setSports(filtered);
         if (filtered.length > 0) setSelectedSport(filtered[0].key);
@@ -122,7 +137,7 @@ export default function BettingPage() {
       .catch((err) => console.error("Error fetching sports:", err));
   }, []);
 
-  // Fetch events for the selected sport
+  // Fetch events for the selected sport.
   useEffect(() => {
     if (!selectedSport) return;
     axios
@@ -139,14 +154,38 @@ export default function BettingPage() {
       .catch((err) => console.error("Error fetching events:", err));
   }, [selectedSport]);
 
-  // On bet modal open, load any existing bets for that event
+  // Monitor events: For events not yet having results, fetch scores to determine if they're completed.
+  useEffect(() => {
+    const eventsNeedingResults = events.filter((event: any) => {
+      // Only fetch if we have not fetched a result for this event.
+      return !eventResults[event.id];
+    });
+    if (eventsNeedingResults.length > 0) {
+      const eventIds = eventsNeedingResults.map((e: any) => e.id).join(",");
+      axios
+        .get(
+          `${ODDS_API_HOST}/v4/sports/${selectedSport}/scores/?apiKey=${process.env.NEXT_PUBLIC_ODDS_API_KEY}&eventIds=${eventIds}&daysFrom=1&dateFormat=iso`
+        )
+        .then((res) => {
+          const scoresData = res.data;
+          const newResults: { [id: string]: any } = { ...eventResults };
+          scoresData.forEach((scoreData: any) => {
+            newResults[scoreData.id] = scoreData;
+          });
+          setEventResults(newResults);
+        })
+        .catch((err) => console.error("Error fetching event results:", err));
+    }
+  }, [events, selectedSport, eventResults]);
+
+  // When the bet modal is open, load any existing bets for the selected event.
   useEffect(() => {
     async function loadMyBets() {
       if (!selectedEvent || !isConnected) return;
       try {
         const accounts = await window.kasware.getAccounts();
         const currentWalletAddress = accounts[0];
-        const res = await axios.get("https://kasino-backend-4818b4b69870.herokuapp.com/api/betting/myBets", {
+        const res = await axios.get(`${apiUrl}/betting/myBets`, {
           params: { walletAddress: currentWalletAddress, eventId: selectedEvent.id },
         });
         if (res.data.success) {
@@ -162,7 +201,7 @@ export default function BettingPage() {
     }
   }, [betModalVisible, selectedEvent, isConnected]);
 
-  // Place a bet
+  // Place a bet.
   const placeBet = async () => {
     if (!isConnected) {
       alert("Please connect your wallet");
@@ -176,6 +215,11 @@ export default function BettingPage() {
       alert("Please select an outcome");
       return;
     }
+    // Prevent bet placement if the event is over.
+    if (isEventOver(selectedEvent, eventResults)) {
+      alert("This event is over. You cannot place a bet.");
+      return;
+    }
 
     try {
       const accounts = await window.kasware.getAccounts();
@@ -184,13 +228,13 @@ export default function BettingPage() {
         alert("No wallet address found");
         return;
       }
-      // Choose treasury address
+      // Choose treasury address.
       const chosenTreasury = Math.random() < 0.5 ? treasuryAddressT1 : treasuryAddressT2;
       if (!chosenTreasury) {
         alert("Treasury address not configured");
         return;
       }
-      // Send deposit
+      // Send deposit using kasware.
       const depositTx = await window.kasware.sendKaspa(chosenTreasury, betAmount * 1e8, {
         priorityFee: 10000,
       });
@@ -198,9 +242,9 @@ export default function BettingPage() {
       const txidString = parsedTx.id;
       setDepositTxid(txidString);
 
-      // Post to backend
+      // Post new bet to the backend.
       const odds = selectedEvent.avgOdds[selectedOutcome];
-      const result = await axios.post("https://kasino-backend-4818b4b69870.herokuapp.com/api/betting/place", {
+      const result = await axios.post(`${apiUrl}/betting/place`, {
         walletAddress: currentWalletAddress,
         eventId: selectedEvent.id,
         sportKey: selectedSport,
@@ -209,7 +253,7 @@ export default function BettingPage() {
         betAmount,
         odds,
         chosenOutcome: selectedOutcome,
-        txid: txidString, // pass the transaction id
+        txid: txidString,
       });
       if (result.data.success) {
         setBetModalVisible(false);
@@ -223,7 +267,7 @@ export default function BettingPage() {
             chosenOutcome: selectedOutcome,
           },
         ]);
-        // Poll for outcome after delay
+        // Poll for the bet outcome after a short delay.
         setTimeout(() => {
           pollBetResult(result.data.betId);
         }, 5000);
@@ -236,11 +280,11 @@ export default function BettingPage() {
     }
   };
 
-  // Poll for bet outcome
+  // Poll for bet outcome.
   const pollBetResult = async (betId: string) => {
     setLoadingResult(true);
     try {
-      const res = await axios.post("https://kasino-backend-4818b4b69870.herokuapp.com/api/betting/payout", { betId });
+      const res = await axios.post(`${apiUrl}/betting/payout`, { betId });
       if (res.data.success) {
         setResultState({
           eventName: res.data.bet.eventName,
@@ -257,17 +301,22 @@ export default function BettingPage() {
     }
   };
 
-  // Group and sort events by date
+  // Group events by local date.
   const groupedEvents = groupEventsByDate(events);
   const sortedDates = Object.keys(groupedEvents).sort(
     (a, b) => new Date(a).getTime() - new Date(b).getTime()
   );
 
-  // Close the modal
+  // Close modal handler.
   const closeModal = () => setBetModalVisible(false);
 
   return (
     <div className={`${montserrat.className} min-h-screen bg-black text-white p-6`}>
+      {/* Banner */}
+      <div className="mb-6">
+        <Image src={bannerSrc} alt="Banner" width={1200} height={200} className="w-full object-cover" />
+      </div>
+
       {/* Header */}
       <header className="flex items-center justify-between mb-6">
         <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
@@ -275,12 +324,7 @@ export default function BettingPage() {
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Home
           </Link>
         </motion.div>
-        <motion.div
-          className="flex items-center gap-4"
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.5 }}
-        >
+        <motion.div className="flex items-center gap-4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5 }}>
           <XPDisplay />
           <WalletConnection />
         </motion.div>
@@ -312,34 +356,40 @@ export default function BettingPage() {
               .filter((event: any) => event.sport_key === selectedSport)
               .map((event: any) => {
                 const teams = Object.keys(event.avgOdds || {});
+                const over = isEventOver(event, eventResults);
+                // Change border color: green (#49EACB) if not over, red if over.
+                const borderColor = over ? "border-red-500" : "border-[#49EACB]";
                 return (
                   <Card
                     key={event.id}
-                    className="p-4 bg-gray-800 border border-[#49EACB] cursor-pointer hover:bg-gray-700 text-white"
+                    className={`p-4 bg-gray-800 ${borderColor} cursor-pointer hover:bg-gray-700 text-white`}
                     onClick={() => {
                       setSelectedEvent(event);
                       setSelectedOutcome(null);
                       setBetModalVisible(true);
                     }}
                   >
-                    <h3 className="text-xl font-bold">
-                      {formatEventTeams(event.away_team, event.home_team)}
-                    </h3>
+                    <h3 className="text-xl font-bold">{formatEventTeams(event.away_team, event.home_team)}</h3>
                     <p className="text-sm">
-                      Commence Time:{" "}
-                      {new Date(event.commence_time).toLocaleString()}
+                      Commence Time: {new Date(event.commence_time).toLocaleString()}
                     </p>
                     <div className="mt-2">
-                      {teams.map((team) => (
-                        <p key={team} className="text-lg">
-                          {team}:{" "}
-                          {event.avgOdds[team] > 0
-                            ? `+${event.avgOdds[team]}`
-                            : event.avgOdds[team]}
+                      {over ? (
+                        // If the event is over, show result details.
+                        <p className="text-lg font-semibold">
+                          Result: {eventResults[event.id] && eventResults[event.id].completed
+                            ? getEventResultDisplay(event)
+                            : "Pending"}
                         </p>
-                      ))}
+                      ) : (
+                        // Otherwise, show average odds.
+                        teams.map((team) => (
+                          <p key={team} className="text-lg">
+                            {team}: {event.avgOdds[team] > 0 ? `+${event.avgOdds[team]}` : event.avgOdds[team]}
+                          </p>
+                        ))
+                      )}
                     </div>
-                    {/* Show any existing bets for this event */}
                     {myBets.filter((bet: any) => bet.eventId === event.id).length > 0 && (
                       <div className="mt-2 text-sm text-gray-300">
                         <strong>Your Bets:</strong>
@@ -347,8 +397,7 @@ export default function BettingPage() {
                           .filter((bet: any) => bet.eventId === event.id)
                           .map((bet: any, idx: number) => (
                             <div key={idx}>
-                              {bet.betAmount} KAS at odds {bet.odds.toFixed(2)} on{" "}
-                              {bet.chosenOutcome}
+                              {bet.betAmount} KAS at odds {bet.odds.toFixed(2)} on {bet.chosenOutcome}
                             </div>
                           ))}
                       </div>
@@ -385,17 +434,12 @@ export default function BettingPage() {
               >
                 &times;
               </motion.button>
-
-              <h2 className="text-2xl mb-4 text-white">
-                {formatEventTeams(selectedEvent.away_team, selectedEvent.home_team)}
-              </h2>
+              <h2 className="text-2xl mb-4 text-white">{formatEventTeams(selectedEvent.away_team, selectedEvent.home_team)}</h2>
               <p className="mb-2 text-white">
-                Commence Time:{" "}
-                {new Date(selectedEvent.commence_time).toLocaleString()}
+                Commence Time: {new Date(selectedEvent.commence_time).toLocaleString()}
               </p>
-              {/* Show deposit TXID if any */}
               {depositTxid && (
-                <p className="mb-4 text-sm text-white">
+                <p className="mb-4 text-sm text-white break-words">
                   Deposit TXID:{" "}
                   <a
                     href={`https://kas.fyi/transaction/${depositTxid}`}
@@ -407,48 +451,53 @@ export default function BettingPage() {
                   </a>
                 </p>
               )}
-              {/* Outcome choices */}
-              <div className="mb-6">
-                <p className="text-white mb-2">Choose Your Outcome:</p>
-                <div className="flex flex-col gap-3">
-                  {(() => {
-                    const averages = calculateAverageOdds(selectedEvent);
-                    return Object.keys(averages).map((team) => (
-                      <Button
-                        key={team}
-                        variant={selectedOutcome === team ? "default" : "outline"}
-                        className={
-                          selectedOutcome === team
-                            ? "w-full bg-[#49EACB] text-black font-bold"
-                            : "w-full border-[#49EACB] text-black hover:bg-[#49EACB]/40"
-                        }
-                        onClick={() => setSelectedOutcome(team)}
-                      >
-                        {team}:{" "}
-                        {averages[team] > 0 ? `+${averages[team]}` : averages[team]}
-                      </Button>
-                    ));
-                  })()}
+              {isEventOver(selectedEvent, eventResults) ? (
+                <div className="mb-6">
+                  <p className="text-lg font-semibold text-red-500">Event Over!</p>
+                  <p className="text-lg text-white">
+                    Result:{" "}
+                    {eventResults[selectedEvent.id] && eventResults[selectedEvent.id].completed
+                      ? getEventResultDisplay(selectedEvent)
+                      : "Pending"}
+                  </p>
                 </div>
-              </div>
-
-              {/* Bet Amount Input */}
-              <div className="mb-4">
-                <input
-                  type="number"
-                  className="w-full p-2 text-black rounded"
-                  placeholder="Bet Amount (KAS)"
-                  onChange={(e) => setBetAmount(Number(e.target.value))}
-                />
-              </div>
-
-              {/* Place Bet Button */}
-              <Button
-                onClick={placeBet}
-                className="w-full bg-[#49EACB] text-black font-bold hover:bg-[#49EACB]/80"
-              >
-                Place Bet
-              </Button>
+              ) : (
+                <>
+                  <div className="mb-6">
+                    <p className="text-white mb-2">Choose Your Outcome:</p>
+                    <div className="flex flex-col gap-3">
+                      {(() => {
+                        const averages = calculateAverageOdds(selectedEvent);
+                        return Object.keys(averages).map((team) => (
+                          <Button
+                            key={team}
+                            variant={selectedOutcome === team ? "default" : "outline"}
+                            className={
+                              selectedOutcome === team
+                                ? "w-full bg-[#49EACB] text-black font-bold"
+                                : "w-full border-[#49EACB] text-black hover:bg-[#49EACB]/40"
+                            }
+                            onClick={() => setSelectedOutcome(team)}
+                          >
+                            {team}: {averages[team] > 0 ? `+${averages[team]}` : averages[team]}
+                          </Button>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+                  <div className="mb-4">
+                    <input
+                      type="number"
+                      className="w-full p-2 text-black rounded"
+                      placeholder="Bet Amount (KAS)"
+                      onChange={(e) => setBetAmount(Number(e.target.value))}
+                    />
+                  </div>
+                  <Button onClick={placeBet} className="w-full bg-[#49EACB] text-black font-bold hover:bg-[#49EACB]/80">
+                    Place Bet
+                  </Button>
+                </>
+              )}
             </motion.div>
           </motion.div>
         )}
@@ -467,10 +516,7 @@ export default function BettingPage() {
             {resultState.win ? (
               <div>
                 <h2 className="text-xl font-bold">Congratulations!</h2>
-                <p>
-                  You won on {resultState.eventName} with a payout of{" "}
-                  {resultState.winAmount} KAS.
-                </p>
+                <p>You won on {resultState.eventName} with a payout of {resultState.winAmount} KAS.</p>
               </div>
             ) : (
               <div>
