@@ -360,8 +360,8 @@ export default function BettingPage() {
         {sports.map((sport) => {
           const isSelected = selectedSport === sport.key;
           const btnClass = isSelected
-            ? "bg-[#49EACB] text-black px-6 py-3 text-lg"
-            : "bg-gray-800 text-white px-6 py-3 text-lg";
+            ? "bg-[#49EACB] text-black px-8 py-4 text-2xl"
+            : "bg-gray-800 text-white px-8 py-4 text-2xl";
           return (
             <Button
               key={sport.key}
@@ -374,8 +374,8 @@ export default function BettingPage() {
                   <Image
                     src={iconMap[sport.key]}
                     alt={`${sport.title} icon`}
-                    width={24}
-                    height={24}
+                    width={32}
+                    height={32}
                     className="ml-2"
                   />
                 )}
@@ -386,81 +386,90 @@ export default function BettingPage() {
       </div>
 
       {/* Sport heading */}
-      <h1 className="text-3xl font-bold mb-4 text-[#49EACB]">
+      <h1 className="text-4xl font-bold mb-4 text-[#49EACB]">
         {sports.find((s) => s.key === selectedSport)?.title}
       </h1>
 
-      {/* Display events grouped by date */}
-      {sortedDates.map((dateStr) => {
-        const relevantEvents = groupedEvents[dateStr].filter(
-          (event: any) =>
-            event.sport_key === selectedSport && isWithinOneWeek(event.commence_time)
-        );
-        if (relevantEvents.length === 0) return null;
+      {/* Display events grouped by date with loading animation */}
+      <AnimatePresence exitBeforeEnter>
+        <motion.div
+          key={selectedSport}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          transition={{ duration: 0.5 }}
+        >
+          {sortedDates.map((dateStr) => {
+            const relevantEvents = groupedEvents[dateStr].filter(
+              (event: any) =>
+                event.sport_key === selectedSport && isWithinOneWeek(event.commence_time)
+            );
+            if (relevantEvents.length === 0) return null;
 
-        return (
-          <section key={dateStr} className="mb-8">
-            <h2 className="text-2xl font-bold mb-4 text-white">{dateStr}</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {relevantEvents.map((event: any) => {
-                const over = isEventOver(event, eventResults);
-                const borderColor = over ? "border-red-500" : "border-[#49EACB]";
-                return (
-                  <Card
-                    key={event.id}
-                    className={`p-4 bg-gray-800 ${borderColor} cursor-pointer hover:bg-gray-700 text-white`}
-                    onClick={() => {
-                      setSelectedEvent(event);
-                      setSelectedOutcome(null);
-                      setBetModalVisible(true);
-                    }}
-                  >
-                    <h3 className="text-xl font-bold">
-                      {formatEventTeams(event.away_team, event.home_team)}
-                    </h3>
-                    <p className="text-sm">
-                      Commence Time: {new Date(event.commence_time).toLocaleString()}
-                    </p>
-                    <div className="mt-2">
-                      {over ? (
-                        <p className="text-lg font-semibold">
-                          Result:{" "}
-                          {eventResults[event.id] && eventResults[event.id].completed
-                            ? getEventResultDisplay(event)
-                            : "Pending"}
+            return (
+              <section key={dateStr} className="mb-8">
+                <h2 className="text-2xl font-bold mb-4 text-white">{dateStr}</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  {relevantEvents.map((event: any) => {
+                    const over = isEventOver(event, eventResults);
+                    const borderColor = over ? "border-red-500" : "border-[#49EACB]";
+                    return (
+                      <Card
+                        key={event.id}
+                        className={`p-4 bg-gray-800 ${borderColor} cursor-pointer hover:bg-gray-700 text-white`}
+                        onClick={() => {
+                          setSelectedEvent(event);
+                          setSelectedOutcome(null);
+                          setBetModalVisible(true);
+                        }}
+                      >
+                        <h3 className="text-2xl font-bold">
+                          {formatEventTeams(event.away_team, event.home_team)}
+                        </h3>
+                        <p className="text-base">
+                          Commence Time: {new Date(event.commence_time).toLocaleString()}
                         </p>
-                      ) : (
-                        Object.keys(event.avgOdds || {}).map((team) => (
-                          <p key={team} className="text-lg">
-                            {team}:{" "}
-                            {event.avgOdds[team] > 0
-                              ? `+${event.avgOdds[team]}`
-                              : event.avgOdds[team]}
-                          </p>
-                        ))
-                      )}
-                    </div>
-
-                    {myBets.filter((bet: any) => bet.eventId === event.id).length > 0 && (
-                      <div className="mt-2 text-sm text-gray-300">
-                        <strong>Your Bets:</strong>
-                        {myBets
-                          .filter((bet: any) => bet.eventId === event.id)
-                          .map((bet: any, idx: number) => (
-                            <div key={idx}>
-                              {bet.betAmount} KAS at odds {bet.odds.toFixed(2)} on{" "}
-                              {bet.chosenOutcome}
-                            </div>
-                          ))}
-                      </div>
-                    )}
-                  </Card>
-                );
-              })}
-            </div>
-          </section>
-        );
-      })}
+                        <div className="mt-2">
+                          {over ? (
+                            <p className="text-lg font-semibold">
+                              Result:{" "}
+                              {eventResults[event.id] && eventResults[event.id].completed
+                                ? getEventResultDisplay(event)
+                                : "Pending"}
+                            </p>
+                          ) : (
+                            Object.keys(event.avgOdds || {}).map((team) => (
+                              <p key={team} className="text-lg">
+                                {team}:{" "}
+                                {event.avgOdds[team] > 0
+                                  ? `+${event.avgOdds[team]}`
+                                  : event.avgOdds[team]}
+                              </p>
+                            ))
+                          )}
+                        </div>
+                        {myBets.filter((bet: any) => bet.eventId === event.id).length > 0 && (
+                          <div className="mt-2 text-sm text-gray-300">
+                            <strong>Your Bets:</strong>
+                            {myBets
+                              .filter((bet: any) => bet.eventId === event.id)
+                              .map((bet: any, idx: number) => (
+                                <div key={idx}>
+                                  {bet.betAmount} KAS at odds {bet.odds.toFixed(2)} on{" "}
+                                  {bet.chosenOutcome}
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                      </Card>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
+        </motion.div>
+      </AnimatePresence>
 
       {/* Bet Modal */}
       <AnimatePresence>
@@ -479,7 +488,7 @@ export default function BettingPage() {
               transition={{ duration: 0.3 }}
             >
               <motion.button
-                className="absolute top-3 right-3 text-[#49EACB]"
+                className="absolute top-3 right-3 text-[#49EACB] text-2xl"
                 onClick={closeModal}
                 whileHover={{ scale: 1.2, rotate: 90 }}
                 whileTap={{ scale: 0.9 }}
@@ -487,7 +496,7 @@ export default function BettingPage() {
                 &times;
               </motion.button>
 
-              <h2 className="text-2xl mb-4 text-white">
+              <h2 className="text-3xl mb-4 text-white">
                 {formatEventTeams(selectedEvent.away_team, selectedEvent.home_team)}
               </h2>
               <p className="mb-2 text-white">
@@ -520,7 +529,7 @@ export default function BettingPage() {
               ) : (
                 <>
                   <div className="mb-6">
-                    <p className="text-white mb-2">Choose Your Outcome:</p>
+                    <p className="text-white mb-2 text-xl">Choose Your Outcome:</p>
                     <div className="flex flex-col gap-3">
                       {(() => {
                         const averages = calculateAverageOdds(selectedEvent);
@@ -530,8 +539,8 @@ export default function BettingPage() {
                             variant={selectedOutcome === team ? "default" : "outline"}
                             className={
                               selectedOutcome === team
-                                ? "w-full bg-[#49EACB] text-black font-bold"
-                                : "w-full border-[#49EACB] text-black hover:bg-[#49EACB]/40"
+                                ? "w-full py-4 text-2xl bg-[#49EACB] text-black font-bold"
+                                : "w-full py-4 text-2xl border-[#49EACB] text-black hover:bg-[#49EACB]/40"
                             }
                             onClick={() => setSelectedOutcome(team)}
                           >
@@ -544,14 +553,14 @@ export default function BettingPage() {
                   <div className="mb-4">
                     <input
                       type="number"
-                      className="w-full p-2 text-black rounded"
+                      className="w-full p-2 text-black rounded text-xl"
                       placeholder="Bet Amount (KAS)"
                       onChange={(e) => setBetAmount(Number(e.target.value))}
                     />
                   </div>
                   <Button
                     onClick={placeBet}
-                    className="w-full bg-[#49EACB] text-black font-bold hover:bg-[#49EACB]/80"
+                    className="w-full py-4 text-2xl bg-[#49EACB] text-black font-bold hover:bg-[#49EACB]/80"
                   >
                     Place Bet
                   </Button>
