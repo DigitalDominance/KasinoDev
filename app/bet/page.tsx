@@ -371,8 +371,8 @@ export default function BettingPage() {
         {sports.map((sport) => {
           const isSelected = selectedSport === sport.key;
           const btnClass = isSelected
-            ? "bg-[#49EACB] text-black px-10 py-5 text-5xl"
-            : "bg-gray-800 text-white px-10 py-5 text-5xl";
+            ? "bg-[#49EACB] text-black px-15 py-10 text-4xl"
+            : "bg-gray-800 text-white px-15 py-10 text-4xl";
           return (
             <Button
               key={sport.key}
