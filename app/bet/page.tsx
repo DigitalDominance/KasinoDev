@@ -367,12 +367,12 @@ export default function BettingPage() {
       </div>
 
       {/* Top category buttons */}
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-4 mb-6">
         {sports.map((sport) => {
           const isSelected = selectedSport === sport.key;
           const btnClass = isSelected
-            ? "bg-[#49EACB] text-black px-20 py-9 text-4xl"
-            : "bg-gray-800 text-white px-20 py-9 text-4xl";
+            ? "bg-[#49EACB] text-black px-10 py-5 text-3xl"
+            : "bg-gray-800 text-white px-10 py-5 text-3xl";
           return (
             <Button
               key={sport.key}
@@ -385,8 +385,8 @@ export default function BettingPage() {
                   <Image
                     src={iconMap[sport.key]}
                     alt={`${sport.title} icon`}
-                    width={50}
-                    height={50}
+                    width={32}
+                    height={32}
                     className="ml-2"
                   />
                 )}
