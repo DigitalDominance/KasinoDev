@@ -367,12 +367,12 @@ export default function BettingPage() {
       </div>
 
       {/* Top category buttons */}
-      <div className="flex gap-8 mb-6">
+      <div className="flex gap-2 mb-6">
         {sports.map((sport) => {
           const isSelected = selectedSport === sport.key;
           const btnClass = isSelected
-            ? "bg-[#49EACB] text-black px-18 py-9 text-4xl"
-            : "bg-gray-800 text-white px-18 py-9 text-4xl";
+            ? "bg-[#49EACB] text-black px-20 py-9 text-4xl"
+            : "bg-gray-800 text-white px-20 py-9 text-4xl";
           return (
             <Button
               key={sport.key}
