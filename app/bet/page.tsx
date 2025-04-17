@@ -371,8 +371,8 @@ export default function BettingPage() {
         {sports.map((sport) => {
           const isSelected = selectedSport === sport.key;
           const btnClass = isSelected
-            ? "bg-[#49EACB] text-black px-10 py-5 text-3xl"
-            : "bg-gray-800 text-white px-10 py-5 text-3xl";
+            ? "bg-[#49EACB] text-black px-10 py-5 text-5xl"
+            : "bg-gray-800 text-white px-10 py-5 text-5xl";
           return (
             <Button
               key={sport.key}
@@ -385,8 +385,8 @@ export default function BettingPage() {
                   <Image
                     src={iconMap[sport.key]}
                     alt={`${sport.title} icon`}
-                    width={32}
-                    height={32}
+                    width={50}
+                    height={50}
                     className="ml-2"
                   />
                 )}
