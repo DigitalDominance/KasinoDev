@@ -433,15 +433,25 @@ export default function BettingPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                   {relevantEvents.map((event: any) => {
                     const over = isEventOver(event, eventResults);
+                    const eventTime = new Date(event.commence_time).getTime();
+                    const now = Date.now();
+                    const ongoing = eventTime <= now && !over;
                     const borderColor = over ? "border-red-500" : "border-[#49EACB]";
+                    const cursorClass = !over && !ongoing
+                      ? "cursor-pointer hover:bg-gray-700"
+                      : "cursor-not-allowed";
+
                     return (
                       <Card
                         key={event.id}
-                        className={`p-4 bg-gray-800 ${borderColor} cursor-pointer hover:bg-gray-700 text-white`}
+                        className={`p-4 bg-gray-800 ${borderColor} ${cursorClass} text-white`}
                         onClick={() => {
-                          setSelectedEvent(event);
-                          setSelectedOutcome(null);
-                          setBetModalVisible(true);
+                          if (!over && !ongoing) {
+                            setSelectedEvent(event);
+                            setSelectedOutcome(null);
+                            setDepositTxid(null);
+                            setBetModalVisible(true);
+                          }
                         }}
                       >
                         <h3 className="text-2xl font-bold">
@@ -451,7 +461,11 @@ export default function BettingPage() {
                           Commence Time: {new Date(event.commence_time).toLocaleString()}
                         </p>
                         <div className="mt-2">
-                          {over ? (
+                          {ongoing ? (
+                            <p className="text-lg font-semibold text-[#49EACB]">
+                              Event In Progress
+                            </p>
+                          ) : over ? (
                             <p className="text-lg font-semibold">
                               Result:{" "}
                               {eventResults[event.id] && eventResults[event.id].completed
@@ -537,56 +551,73 @@ export default function BettingPage() {
                   </a>
                 </p>
               )}
-              {isEventOver(selectedEvent, eventResults) ? (
-                <div className="mb-6">
-                  <p className="text-lg font-semibold text-red-500">Event Over!</p>
-                  <p className="text-lg text-white">
-                    Result:{" "}
-                    {eventResults[selectedEvent.id] && eventResults[selectedEvent.id].completed
-                      ? determineWinner(eventResults[selectedEvent.id].scores).scoreDisplay
-                      : "Pending"}
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <div className="mb-6">
-                    <p className="text-white mb-2 text-xl">Choose Your Outcome:</p>
-                    <div className="flex flex-col gap-3">
-                      {(() => {
-                        const averages = calculateAverageOdds(selectedEvent);
-                        return Object.keys(averages).map((team) => (
-                          <Button
-                            key={team}
-                            variant={selectedOutcome === team ? "default" : "outline"}
-                            className={
-                              selectedOutcome === team
-                                ? "w-full py-4 text-2xl bg-[#49EACB] text-black font-bold"
-                                : "w-full py-4 text-2xl border-[#49EACB] text-black hover:bg-[#49EACB]/40"
-                            }
-                            onClick={() => setSelectedOutcome(team)}
-                          >
-                            {team}: {averages[team] > 0 ? `+${averages[team]}` : averages[team]}
-                          </Button>
-                        ));
-                      })()}
+
+              {(() => {
+                const selectedOver = isEventOver(selectedEvent, eventResults);
+                const selectedCommence = new Date(selectedEvent.commence_time).getTime();
+                const selectedOngoing = selectedCommence <= Date.now() && !selectedOver;
+
+                if (selectedOver) {
+                  return (
+                    <div className="mb-6">
+                      <p className="text-lg font-semibold text-red-500">Event Over!</p>
+                      <p className="text-lg text-white">
+                        Result:{" "}
+                        {eventResults[selectedEvent.id] && eventResults[selectedEvent.id].completed
+                          ? determineWinner(eventResults[selectedEvent.id].scores).scoreDisplay
+                          : "Pending"}
+                      </p>
                     </div>
-                  </div>
-                  <div className="mb-4">
-                    <input
-                      type="number"
-                      className="w-full p-2 text-black rounded text-xl"
-                      placeholder="Bet Amount (KAS)"
-                      onChange={(e) => setBetAmount(Number(e.target.value))}
-                    />
-                  </div>
-                  <Button
-                    onClick={placeBet}
-                    className="w-full py-4 text-2xl bg-[#49EACB] text-black font-bold hover:bg-[#49EACB]/80"
-                  >
-                    Place Bet
-                  </Button>
-                </>
-              )}
+                  );
+                } else if (selectedOngoing) {
+                  return (
+                    <div className="mb-6">
+                      <p className="text-lg font-semibold text-[#49EACB]">Event In Progress</p>
+                    </div>
+                  );
+                } else {
+                  return (
+                    <>
+                      <div className="mb-6">
+                        <p className="text-white mb-2 text-xl">Choose Your Outcome:</p>
+                        <div className="flex flex-col gap-3">
+                          {(() => {
+                            const averages = calculateAverageOdds(selectedEvent);
+                            return Object.keys(averages).map((team) => (
+                              <Button
+                                key={team}
+                                variant={selectedOutcome === team ? "default" : "outline"}
+                                className={
+                                  selectedOutcome === team
+                                    ? "w-full py-4 text-2xl bg-[#49EACB] text-black font-bold"
+                                    : "w-full py-4 text-2xl border-[#49EACB] text-black hover:bg-[#49EACB]/40"
+                                }
+                                onClick={() => setSelectedOutcome(team)}
+                              >
+                                {team}: {averages[team] > 0 ? `+${averages[team]}` : averages[team]}
+                              </Button>
+                            ));
+                          })()}
+                        </div>
+                      </div>
+                      <div className="mb-4">
+                        <input
+                          type="number"
+                          className="w-full p-2 text-black rounded text-xl"
+                          placeholder="Bet Amount (KAS)"
+                          onChange={(e) => setBetAmount(Number(e.target.value))}
+                        />
+                      </div>
+                      <Button
+                        onClick={placeBet}
+                        className="w-full py-4 text-2xl bg-[#49EACB] text-black font-bold hover:bg-[#49EACB]/80"
+                      >
+                        Place Bet
+                      </Button>
+                    </>
+                  );
+                }
+              })()}
             </motion.div>
           </motion.div>
         )}
