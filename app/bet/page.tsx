@@ -145,7 +145,7 @@ export default function BettingPage() {
   const [depositTxid, setDepositTxid] = useState<string | null>(null);
 
   // Banner image source from public folder.
-  const bannerSrc = "/placeholder.svg";
+  const bannerSrc = "/sportsbetbanner.webp";
 
   // Fetch sports on mount.
   useEffect(() => {
