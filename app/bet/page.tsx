@@ -1,3 +1,4 @@
+// BettingPage.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -14,6 +15,7 @@ import { XPDisplay } from "@/app/page";
 import { Montserrat } from "next/font/google";
 import { useWallet } from "@/contexts/WalletContext";
 import { v4 as uuidv4 } from "uuid";
+import { io } from "socket.io-client";
 
 // Font
 const montserrat = Montserrat({
@@ -140,9 +142,27 @@ export default function BettingPage() {
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [betAmount, setBetAmount] = useState<number>(0);
   const [myBets, setMyBets] = useState<any[]>([]);
-  const [loadingResult, setLoadingResult] = useState(false);
   const [selectedOutcome, setSelectedOutcome] = useState<string | null>(null);
   const [depositTxid, setDepositTxid] = useState<string | null>(null);
+
+  // Socket for bet resolution notifications
+  useEffect(() => {
+    const socket = io(
+      process.env.NEXT_PUBLIC_SOCKET_URL ||
+        "https://kasino-backend-4818b4b69870.herokuapp.com"
+    );
+    socket.on("betResolved", (data: { eventName: string; winAmount: number; win: boolean }) => {
+      setResultState({
+        eventName: data.eventName,
+        winAmount: data.winAmount,
+        win: data.win,
+      });
+    });
+    return () => {
+      socket.off("betResolved");
+      socket.disconnect();
+    };
+  }, []);
 
   // Banner image source from public folder.
   const bannerSrc = "/sportsbetbanner.webp";
@@ -283,36 +303,12 @@ export default function BettingPage() {
             chosenOutcome: selectedOutcome,
           },
         ]);
-        setTimeout(() => {
-          pollBetResult(result.data.betId);
-        }, 5000);
       } else {
         alert("Failed to place bet on backend");
       }
     } catch (error: any) {
       console.error("Error placing bet:", error);
       alert("Error placing bet.");
-    }
-  };
-
-  // Poll for the outcome of a bet.
-  const pollBetResult = async (betId: string) => {
-    setLoadingResult(true);
-    try {
-      const res = await axios.post(`${apiUrl}/betting/payout`, { betId });
-      if (res.data.success) {
-        setResultState({
-          eventName: res.data.bet.eventName,
-          winAmount: res.data.bet.winAmount,
-          win: res.data.bet.gameResult === "win",
-        });
-      } else {
-        console.error("Bet payout failed:", res.data.message);
-      }
-    } catch (error: any) {
-      console.error("Error resolving bet payout:", error);
-    } finally {
-      setLoadingResult(false);
     }
   };
 
@@ -627,7 +623,9 @@ export default function BettingPage() {
       <AnimatePresence>
         {resultState && (
           <motion.div
-            className="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-green-600 p-4 rounded-lg shadow-lg text-center text-white z-50"
+            className={`fixed bottom-6 left-1/2 transform -translate-x-1/2 p-4 rounded-lg shadow-lg text-center text-white z-50 ${
+              resultState.win ? "bg-green-600" : "bg-red-600"
+            }`}
             initial={{ opacity: 0, y: 50 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 50 }}
@@ -649,12 +647,6 @@ export default function BettingPage() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      {loadingResult && (
-        <div className="fixed bottom-6 right-6 bg-gray-800 p-2 rounded text-white z-50">
-          <p>Processing result...</p>
-        </div>
-      )}
 
       <SiteFooter />
     </div>
